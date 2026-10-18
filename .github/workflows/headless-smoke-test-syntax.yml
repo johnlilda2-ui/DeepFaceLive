@@ -1,0 +1,26 @@
+name: Headless smoke-test syntax
+
+on:
+  push:
+    branches:
+      - experiment/cloud-headless-webrtc
+    paths:
+      - "scripts/headless_inference_smoke_test.py"
+      - ".github/workflows/headless-smoke-test-syntax.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out experiment branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile smoke-test script
+        run: python -m py_compile scripts/headless_inference_smoke_test.py
