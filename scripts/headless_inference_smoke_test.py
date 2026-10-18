@@ -18,6 +18,13 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+# Compatibility for this older project on modern Python versions. Python 3.10+
+# removed collections.Iterable, which the legacy xlib.face.FRect module imports.
+import collections
+import collections.abc
+if not hasattr(collections, "Iterable"):
+    collections.Iterable = collections.abc.Iterable
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
