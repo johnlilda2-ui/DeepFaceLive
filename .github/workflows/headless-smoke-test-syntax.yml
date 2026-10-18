@@ -16,8 +16,11 @@ jobs:
   python-syntax:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out experiment branch
+      - name: Check out smoke-test script only
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/headless_inference_smoke_test.py
+          sparse-checkout-cone-mode: false
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
