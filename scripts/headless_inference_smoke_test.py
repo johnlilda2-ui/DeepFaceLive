@@ -20,6 +20,8 @@ from typing import Any, Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 class SmokeTestFailure(RuntimeError):
@@ -187,12 +189,12 @@ def load_image(path_text: str, role: str, cv2):
     return image
 
 
-def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int):
+def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int, threshold: float):
     import numpy as np
     from xlib.face import ELandmarks2D, FLandmarks2D, FRect
 
     height, width = image.shape[:2]
-    detections = detector.extract(image, threshold=0.5)[0]
+    detections = detector.extract(image, threshold=threshold)[0]
     if len(detections) == 0:
         raise RuntimeError(
             f"No face detected in the {role} image. Use a clear, front-facing image with one visible face."
@@ -249,8 +251,8 @@ def main() -> int:
         aligned = run_stage(
             "Detect faces and align source identity and target face",
             lambda: (
-                detect_and_align_face(source_image, "source", detector, marker, 1.55, 112),
-                detect_and_align_face(target_image, "target", detector, marker, 2.2, 128),
+                detect_and_align_face(source_image, "source", detector, marker, 1.55, 112, args.threshold),
+                detect_and_align_face(target_image, "target", detector, marker, 2.2, 128, args.threshold),
             ),
         )
         source_aligned, target_aligned = aligned
