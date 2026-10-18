@@ -81,6 +81,19 @@ def choose_device(require_cuda: bool):
     print(f"ONNX Runtime: {ort.__version__}")
     print(f"Available execution providers: {', '.join(providers)}")
 
+    # A provider can be listed even when its CUDA/cuDNN libraries cannot load.
+    # Preload dependencies installed in NVIDIA Python packages when supported.
+    preload = getattr(ort, "preload_dlls", None)
+    if preload is not None:
+        try:
+            preload(directory="")
+            print("Attempted to preload CUDA/cuDNN libraries from NVIDIA Python packages.")
+        except Exception as exc:
+            print(
+                f"[WARN] CUDA/cuDNN library preload failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+
     try:
         devices = get_available_devices_info()
     except Exception:
@@ -252,7 +265,7 @@ def main() -> int:
         )
         source_image, target_image, cv2 = images
 
-        models = run_stage("Load face detector, landmark model, and swap model", lambda: load_models(device))
+        models = run_stage("Load face detector, landmark model, and swap model; verify actual provider", lambda: load_models(device, args.require_cuda))
         detector, marker, swap_model = models
 
         aligned = run_stage(
@@ -294,7 +307,7 @@ def load_both_images(args: argparse.Namespace):
     return source, target, cv2
 
 
-def load_models(device):
+def load_models(device, require_cuda: bool = False):
     from modelhub.onnx import InsightFace2D106, InsightFaceSwap, YoloV5Face
 
     detector = YoloV5Face(device)
@@ -303,8 +316,23 @@ def load_models(device):
     print("Loaded 106-point landmark model.")
     swap_model = InsightFaceSwap(device)
     print("Loaded InsightFaceSwap and identity-recognition models.")
-    return detector, marker, swap_model
 
+    sessions = [
+        ("face detector", detector._sess),
+        ("landmark model", marker._sess),
+        ("face swap model", swap_model._sess_swap),
+        ("identity recognition model", swap_model._sess_rec),
+    ]
+    for label, session in sessions:
+        active_providers = session.get_providers()
+        print(f"Actual providers for {label}: {', '.join(active_providers)}")
+        if require_cuda and "CUDAExecutionProvider" not in active_providers:
+            raise RuntimeError(
+                f"{label} did not activate CUDAExecutionProvider; active providers are "
+                f"{active_providers}. The GPU runtime is not correctly configured, so "
+                "the smoke test is stopping instead of silently continuing on CPU."
+            )
+    return detector, marker, swap_model
 
 def get_valid_face_vector(swap_model, source_aligned):
     import numpy as np
