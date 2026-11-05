@@ -6,6 +6,8 @@ on:
       - experiment/cloud-headless-webrtc
     paths:
       - "scripts/headless_inference_smoke_test.py"
+      - "scripts/test_headless_cuda_evidence.py"
+      - "notebooks/kaggle_headless_inference_smoke_test.ipynb"
       - ".github/workflows/headless-smoke-test-syntax.yml"
   workflow_dispatch:
 
@@ -19,7 +21,10 @@ jobs:
       - name: Check out smoke-test script only
         uses: actions/checkout@v4
         with:
-          sparse-checkout: scripts/headless_inference_smoke_test.py
+          sparse-checkout: |
+            scripts/headless_inference_smoke_test.py
+            scripts/test_headless_cuda_evidence.py
+            notebooks/kaggle_headless_inference_smoke_test.ipynb
           sparse-checkout-cone-mode: false
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,3 +32,5 @@ jobs:
           python-version: "3.11"
       - name: Compile smoke-test script
         run: python -m py_compile scripts/headless_inference_smoke_test.py
+      - name: Test notebook syntax and CUDA evidence gate (CPU only)
+        run: python -m unittest discover -s scripts -p test_headless_cuda_evidence.py

@@ -11,6 +11,11 @@ No GUI, camera, web server, or paid cloud GPU is started by this script.
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
+import tempfile
+from collections import Counter
+from contextlib import contextmanager
 import re
 import sys
 import time
@@ -65,6 +70,7 @@ def parse_args() -> argparse.Namespace:
         help="Output swapped-face crop (default: artifacts/headless-smoke-test/swapped_face.png).",
     )
     parser.add_argument("--threshold", type=float, default=0.5, help="Face detection confidence threshold.")
+    parser.add_argument("--evidence-dir", default="artifacts/headless-smoke-test", help="CUDA profiles and execution evidence directory.")
     parser.add_argument(
         "--require-cuda",
         action="store_true",
@@ -265,7 +271,12 @@ def main() -> int:
         )
         source_image, target_image, cv2 = images
 
-        models = run_stage("Load face detector, landmark model, and swap model; verify actual provider", lambda: load_models(device, args.require_cuda))
+        evidence_dir = Path(args.evidence_dir).resolve()
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        # Unique profile names keep an earlier successful run from satisfying this run.
+        profile_dir = Path(tempfile.mkdtemp(prefix="run-", dir=evidence_dir))
+        with profiled_sessions(profile_dir, args.require_cuda):
+            models = run_stage("Load face detector, landmark model, and swap model; verify actual provider", lambda: load_models(device, args.require_cuda))
         detector, marker, swap_model = models
 
         aligned = run_stage(
@@ -285,6 +296,7 @@ def main() -> int:
             "Run face-swap inference and save result",
             lambda: generate_and_save(swap_model, target_aligned, face_vector, args.output, root, cv2),
         )
+        run_stage("Verify executed CUDA nodes for every model", lambda: save_execution_evidence(models, profile_dir, args.require_cuda))
         print("\nSMOKE TEST PASSED")
         print(f"Selected ONNX device: {device}")
         print(f"Saved swapped aligned face crop: {output_image}")
@@ -307,6 +319,77 @@ def load_both_images(args: argparse.Namespace):
     return source, target, cv2
 
 
+@contextmanager
+def profiled_sessions(profile_dir: Path, require_cuda: bool):
+    """Instrument this process only; leave the desktop session factory unchanged."""
+    import onnxruntime as ort
+
+    original = ort.InferenceSession
+    count = 0
+
+    def create(*args, **kwargs):
+        nonlocal count
+        options = kwargs.get("sess_options") or ort.SessionOptions()
+        options.enable_profiling = True
+        options.profile_file_prefix = str(profile_dir / f"model-{count}")
+        count += 1
+        kwargs["sess_options"] = options
+        session = original(*args, **kwargs)
+        if require_cuda:
+            session.disable_fallback()
+        return session
+
+    ort.InferenceSession = create
+    try:
+        yield
+    finally:
+        ort.InferenceSession = original
+
+
+def model_sessions(models):
+    detector, marker, swap_model = models
+    return [
+        ("face detector", detector._sess),
+        ("landmark model", marker._sess),
+        ("face swap model", swap_model._sess_swap),
+        ("identity recognition model", swap_model._sess_rec),
+    ]
+
+
+def profile_counts(profile_path):
+    events = json.loads(Path(profile_path).read_text())
+    return Counter(
+        event["args"]["provider"] for event in events
+        if event.get("cat") == "Node" and event.get("args", {}).get("provider")
+        and event.get("args", {}).get("op_name") not in ("MemcpyFromHost", "MemcpyToHost")
+    )
+
+
+def save_execution_evidence(models, profile_dir, require_cuda):
+    import onnxruntime as ort
+
+    evidence = {"onnxruntime": ort.__version__, "models": {}, "cuda_verified": False}
+    evidence["commit"] = subprocess.check_output(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
+    ).strip()
+    gpu = subprocess.run(["nvidia-smi"], capture_output=True, text=True) if require_cuda else None
+    evidence["nvidia_smi"] = gpu.stdout if gpu else None
+    failures = []
+    for label, session in model_sessions(models):
+        profile_path = session.end_profiling()
+        counts = profile_counts(profile_path)
+        evidence["models"][label] = {"providers": session.get_providers(), "executed_nodes": dict(counts), "profile": profile_path}
+        print(f"Executed nodes for {label}: {dict(counts)}", flush=True)
+        if not counts.get("CUDAExecutionProvider", 0):
+            failures.append(label)
+    evidence["cuda_verified"] = not failures
+    report = profile_dir / "execution_evidence.json"
+    report.write_text(json.dumps(evidence, indent=2) + "\n")
+    print(f"Execution evidence: {report}")
+    if require_cuda and failures:
+        raise RuntimeError("No executed CUDA compute nodes for: " + ", ".join(failures))
+
+
 def load_models(device, require_cuda: bool = False):
     from modelhub.onnx import InsightFace2D106, InsightFaceSwap, YoloV5Face
 
@@ -317,12 +400,7 @@ def load_models(device, require_cuda: bool = False):
     swap_model = InsightFaceSwap(device)
     print("Loaded InsightFaceSwap and identity-recognition models.")
 
-    sessions = [
-        ("face detector", detector._sess),
-        ("landmark model", marker._sess),
-        ("face swap model", swap_model._sess_swap),
-        ("identity recognition model", swap_model._sess_rec),
-    ]
+    sessions = model_sessions((detector, marker, swap_model))
     for label, session in sessions:
         active_providers = session.get_providers()
         print(f"Actual providers for {label}: {', '.join(active_providers)}")
