@@ -170,3 +170,41 @@ status/network failures for up to 15 seconds without closing working media,
 and explains persistent link failure or expiry. HTTP authentication, missing
 session and inference failures still end the session immediately. The temporary
 route shutdown timer remains in place; retries cannot renew an expired route.
+
+## Identity photo uploads and mouth preservation
+
+The browser now uploads a permission-confirmed JPEG/PNG identity photo, shows a
+local reference preview, and supports a per-session original-video comparison.
+The cloud retains only the derived identity in memory. Upload updates are
+serialized with session admission; photos cannot change during active video.
+Invalid photos leave the prior vector unchanged. Frame diagnostics distinguish
+swapped, no-face passthrough and bypass. The optional mouth mask preserves real
+webcam lip movement; this is not audio-driven lip synthesis.
+
+Kaggle T4 verification at implementation commit
+`5b24f195ed0d7b8d822b7f0db9cbdce19aae8ff8` exercised authenticated PNG and JPEG
+uploads, changed and restored the identity, and returned mouth-preserving video
+through actual HTTP signaling and WebRTC. Five 574×574 frames were received,
+14 incoming RTP packets were counted, and Stop released the session. The decoded
+return was closer to the processed reference (MAE 5.2575) than the original
+(MAE 10.8149). Changing the identity changed the output by MAE 8.5821; enabling
+the mouth mask changed it by MAE 0.7697. These are repeated fictional sample
+frames, not a measurement of live lip-sync quality or real webcam latency.
+
+Executed CUDA compute event counts: detector 2888, landmarks 915, face swap 2486,
+identity embedding 520. Reports and profiles:
+
+- `/kaggle/working/dfl-photo-mouth-audit/run-n6apu_oa/signaling-report.json`
+- `/kaggle/working/dfl-photo-mouth-audit/run-n6apu_oa/worker-l1v_yiba/execution_evidence.json`
+- `/kaggle/working/dfl-photo-mouth-audit.log`
+
+The audit found and fixed JPEG decoding that incorrectly assumed every Pillow
+image had an `n_frames` field. Regressions cover both formats, EXIF rotation,
+dimension limits, authorization, oversized and invalid uploads, active-session
+conflicts, unchanged identity after failure, mouth blending, and inference-free
+bypass. CPU browser tests cover the upload/permission UI and original return;
+only the Kaggle test establishes GPU execution and identity changes.
+
+All 31 unit/regression tests, the CPU WebRTC integrations and the expanded
+Chromium upload, mouth-option, bypass, outage and cleanup checks passed in
+GitHub Actions run `42152931709` at commit `27be436178edc53942bf0903f3ced9b1844dfa7f`.
