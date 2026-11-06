@@ -137,20 +137,24 @@ def main():
         motion['offset_list'] = [seq['offset_list'][0] for seq in sequences]
         report['motion_frame_files'] = [path.name for path in selected]
         old_h, old_w = motion['ori_size']
-        from lhmpp_camera_framing import framing_transform
+        from lhmpp_camera_framing import framing_transform, transform_intrinsics
         framing = framing_transform(old_w, old_h, args.render_height, args.framing_box)
         report['camera_framing'] = framing
         width, height = framing['width'], framing['height']
-        sx, sy = framing['scale_x'], framing['scale_y']
-        motion['render_intrs'][..., 0, 2] -= framing['left']
-        motion['render_intrs'][..., 1, 2] -= framing['top']
-        motion['render_intrs'][..., 0, :] *= sx
-        motion['render_intrs'][..., 1, :] *= sy
-        motion['render_intrs'][..., 0, 2] += framing['pad_x']
         params = motion['smplx_params']
-        params['focal'] *= torch.tensor([sx, sy])
-        params['princpt'] = (params['princpt'] - torch.tensor([framing['left'], framing['top']])) * torch.tensor([sx, sy])
-        params['princpt'][..., 0] += framing['pad_x']
+        intrinsics = motion['render_intrs']
+        torch.testing.assert_close(intrinsics[..., 0, 0], params['focal'][..., 0])
+        torch.testing.assert_close(intrinsics[..., 1, 1], params['focal'][..., 1])
+        torch.testing.assert_close(intrinsics[..., :2, 2], params['princpt'])
+        if torch.count_nonzero(intrinsics[..., 0, 1]) or torch.count_nonzero(intrinsics[..., 1, 0]):
+            raise RuntimeError('Skewed motion cameras are unsupported')
+        focal, principal = transform_intrinsics(
+            [params['focal'][..., 0], params['focal'][..., 1]],
+            [params['princpt'][..., 0], params['princpt'][..., 1]], framing)
+        params['focal'] = torch.stack(focal, dim=-1)
+        params['princpt'] = torch.stack(principal, dim=-1)
+        intrinsics[..., 0, 0], intrinsics[..., 1, 1] = focal
+        intrinsics[..., 0, 2], intrinsics[..., 1, 2] = principal
         params['img_size_wh'][...] = torch.tensor([width, height])
         params['betas'] = torch.from_numpy(betas).float().reshape(1, -1)
         motion['ori_size'] = (height, width)
