@@ -1,0 +1,148 @@
+{
+  "date": "2026-11-06",
+  "scope": "Offline cached full-body decoder precision experiment",
+  "provenance": "Transcribed from executed Kaggle report.json and comparison.json outputs; raw traces, arrays and clips retained in Kaggle output directory.",
+  "gpu": "Tesla T4",
+  "upstream_commit": "906b5d9fb967ab42efb92f6fa55bf22cac86b653",
+  "initial_probe_commit": "bb9bc7d153a68d3edcbf4229965881748cc4fc81",
+  "layout_probe_commit": "5a0ffc2d141386eb04eeb126738e5d5220157907",
+  "comparison_commit": "44a5290a29500cb3b04becaa069a3f890ee85eb9",
+  "reference": "Official fictional AI reference 055330c0d988_000.jpg",
+  "random_seed": 0,
+  "motion": "BasketBall_I SMPL-X frames 00014 through 00099 at stride 5",
+  "frame_size": [
+    364,
+    420
+  ],
+  "output_directory": "/kaggle/working/dfl-fullbody-evidence/decoder-precision-20261106-091159",
+  "control": {
+    "median_fps": 6.0569844448112455,
+    "repeat_fps": [
+      6.06285837983201,
+      6.0569844448112455,
+      6.045186278297954
+    ],
+    "sequence_seconds": [
+      2.9688966610001444,
+      2.971775833999345,
+      2.977575739000713
+    ],
+    "peak_allocated_bytes": 5220337664,
+    "peak_reserved_bytes": 5345640448,
+    "cuda_compute_kernel_events": 21275
+  },
+  "decoder_fp16": {
+    "median_fps": 7.183262547156553,
+    "repeat_fps": [
+      7.183262547156553,
+      7.2082753307454315,
+      7.182259646299968
+    ],
+    "sequence_seconds": [
+      2.50582515699989,
+      2.4971299199996793,
+      2.506175059999805
+    ],
+    "speedup_percent": 18.5947002606246,
+    "peak_allocated_bytes": 5045282816,
+    "peak_reserved_bytes": 5110759424,
+    "cuda_compute_kernel_events": 23726,
+    "quality_gate_passed": true,
+    "automatic_gate_passed": false,
+    "reason": "Speed gain below predeclared 20 percent screening target",
+    "full_mae": 0.12769626080989838,
+    "subject_mae": 0.031443748623132706,
+    "maximum_channel_error": 1
+  },
+  "decoder_fp16_channels_last": {
+    "median_fps": 7.404207778043359,
+    "repeat_fps": [
+      7.404207778043359,
+      7.415141433487826,
+      7.387394245020431
+    ],
+    "sequence_seconds": [
+      2.4310500920000777,
+      2.427465499000391,
+      2.43658310399951
+    ],
+    "speedup_percent": 22.242476359440232,
+    "peak_allocated_bytes": 5046907904,
+    "peak_reserved_bytes": 5102370816,
+    "cuda_compute_kernel_events": 22421,
+    "automatic_gate_passed": true,
+    "quality": {
+      "full_mae": 0.12767918407917023,
+      "subject_mae": 0.03135490044951439,
+      "subject_p99": 1,
+      "subject_large_error_fraction": 0,
+      "minimum_frame_iou": 0.999835065149266,
+      "maximum_frame_subject_mae": 0.03286978602409363,
+      "maximum_channel_error": 1,
+      "quality_gate_passed": true,
+      "mask_method": "union of thresholded nonwhite pixels, not semantic segmentation"
+    },
+    "observed_decoder_output_dtype": "torch.float16",
+    "decoder_weight_dtype": "float32",
+    "decoder_calls": 90,
+    "finite_outputs_checked": true
+  },
+  "predeclared_limits": {
+    "full_mae": 1,
+    "subject_mae": 2,
+    "subject_p99": 8,
+    "subject_large_error_fraction": 0.001,
+    "minimum_frame_iou": 0.99,
+    "maximum_frame_subject_mae": 2,
+    "minimum_speedup_percent": 20
+  },
+  "validation": {
+    "strict_loading_all_conditions": true,
+    "cuda_compute_events_all_conditions": true,
+    "repeat_pixel_mae_from_each_verified_run": 0,
+    "all_clips": {
+      "codec": "h264",
+      "fps": "6/1",
+      "duration_seconds": 3,
+      "decoded_frames": 18
+    },
+    "reference_pixels_camera_pose_betas_seed_matched": true,
+    "quality_unit_tests_passed": 3,
+    "syntax_checks_passed": true,
+    "visual_review": {
+      "completed": true,
+      "poses": [
+        1,
+        6,
+        18
+      ],
+      "finding": "No visible structural or clothing change compared with baseline; underlying face/hand/limb quality remains coarse"
+    }
+  },
+  "timing_method": {
+    "warmup_sequences": 1,
+    "repeats": 3,
+    "synchronized_wall_time": true,
+    "includes": [
+      "CPU processing",
+      "GPU rendering",
+      "readback"
+    ],
+    "excludes": [
+      "reference reconstruction",
+      "video encoding",
+      "network",
+      "live pose tracking"
+    ]
+  },
+  "decision": "Keep FP16 plus channels-last available as an explicit experimental mode. Do not change default decoder precision or the existing face worker.",
+  "default_enabled": false,
+  "live_verified": false,
+  "limitations": [
+    "One fictional reference and 18 prerecorded poses",
+    "Short screening test, not long-session stability or end-to-end latency",
+    "No improvement in target likeness is claimed",
+    "No webcam retargeting, avatar streaming, lip synchronization or OBS validation"
+  ],
+  "next_gate": "Separate cached-avatar worker accepting motion frames, followed by public body-pose tracking and retargeting evaluation."
+}

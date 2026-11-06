@@ -248,3 +248,62 @@ Evidence: [transcribed summary](evidence/lhmpp-t4-allocator-summary.json). Full 
 ![Allocator A/B audit on Kaggle](evidence/lhmpp-t4-allocator-proof.jpg)
 
 The normal renderer remains the baseline. The next bounded speed investigation should profile the neural decoder and test a precision change against explicit image-quality criteria before connecting webcam pose estimation. Live lips, webcam retargeting, WebRTC avatar transport, long-session stability and OBS output are still pending. No paid compute was started. All changes are confined to experimental scripts and evidence; master, the desktop app and the existing face worker remain unchanged.
+
+
+## Decoder precision and layout screening — 2026-11-06
+
+**Offline screening passed for the optional decoder FP16 plus channels-last mode.** It measured **7.404 FPS versus 6.057 FPS** for the current full-precision control, a **22.24% gain**. Maximum raw RGB difference across all 18 frames was one intensity level out of 255. This remains a short offline test, not live webcam performance or improved target likeness.
+
+| Condition | Three unprofiled repeat FPS | Median FPS | Peak allocated bytes | Peak reserved bytes | Automatic screening |
+| --- | --- | ---: | ---: | ---: | --- |
+| Original decoder | 6.063, 6.057, 6.045 | 6.057 | 5,220,337,664 | 5,345,640,448 | Control |
+| Decoder FP16 autocast | 7.183, 7.208, 7.182 | 7.183 | 5,045,282,816 | 5,110,759,424 | Quality passed; 18.59% speed gain below target |
+| Decoder FP16 plus channels-last | 7.404, 7.415, 7.387 | 7.404 | 5,046,907,904 | 5,102,370,816 | Quality and 20% speed target passed |
+
+Each condition uses the same fictional AI reference, seed 0, matched camera/shape/pose inputs and 364×420 output. One warmup sequence precedes three synchronized 18-frame repeats. Wall time includes CPU processing and GPU readback, but excludes reconstruction, video encoding, network and pose tracking. The control was measured in the current session rather than comparing against a historical profiled run. The channels-last trial reuses that control. These short sequential runs do not establish broad performance across users, references or long sessions.
+
+### Fixed quality limits and measured results
+
+The quality module and its limits were committed before the candidate ran. Half precision intentionally permits numerical differences; its screening is separate from the earlier allocator experiment's unchanged strict equality gate.
+
+| Screening metric | Limit | FP16 plus channels-last result |
+| --- | ---: | ---: |
+| Full-image mean absolute error, 0–255 scale | ≤1.0 | 0.127679 |
+| Foreground-union mean absolute error | ≤2.0 | 0.031355 |
+| Foreground-union 99th percentile error | ≤8.0 | 1.0 |
+| Foreground channel fraction with error >16 | ≤0.001 | 0 |
+| Worst-frame foreground overlap | ≥0.99 | 0.999835 |
+| Worst-frame foreground mean absolute error | ≤2.0 | 0.032870 |
+| Speed gain | ≥20% | 22.24% |
+
+Foreground is defined by thresholded nonwhite pixels from the union of both outputs; this is not semantic segmentation. The global maximum channel error was 1, including face, clothing and background pixels. Manual review of poses 1, 6 and 18 found no visible structural or clothing degradation. The original face, hand and limb detail remains coarse. These checks do not measure identity likeness or prove quality for other references.
+
+### Implementation and execution audit
+
+- `scripts/lhmpp_decoder_precision.py` enables CUDA FP16 autocast only around the audited neural decoder. Weights stay float32. Reconstruction, Gaussian animation and downstream compositing stay outside that autocast context.
+- The optional channels-last layout applies only to the decoder and verifies its convolution-weight layout.
+- Outputs are checked for finite values before uint8 encoding, then returned as float32 for compositing. This avoids encoded pixels concealing NaNs or infinities.
+- The probe requires `--decoder-fp16` before accepting `--decoder-channels-last`. Both are disabled by default. The allocator experiment remains disabled.
+- Actual decoder outputs were observed as `torch.float16` on CUDA, across 90 decoder calls per candidate. Strict weights loaded in every condition.
+- Executed CUDA compute-kernel counts were 21,275 / 23,726 / 22,421 for control / FP16 / FP16 plus layout. Raw profiler traces are retained.
+- Every condition encoded an H.264 clip verified as 18 decoded frames, 6/1 FPS, duration 3.000000 seconds. Repeated outputs within each condition matched its verified run.
+- Three quality unit tests passed, including subject-only damage hidden by a white background and outline-change rejection. Python syntax checks passed.
+- The first FP16-only audit returned exit 1 because its 18.59% speed gain missed the predeclared target. The layout candidate returned exit 0 using the same unchanged criteria. No criteria were weakened after seeing results.
+
+Initial probe source: `bb9bc7d153a68d3edcbf4229965881748cc4fc81`. Layout probe source: `5a0ffc2d141386eb04eeb126738e5d5220157907`. Comparison source: `44a5290a29500cb3b04becaa069a3f890ee85eb9`.
+
+### Reproduction and next gate
+
+Use the existing bounded probe command and identical calibrated camera arguments with `--benchmark-repeats 3`. Add `--decoder-fp16 --decoder-channels-last` only for the optimized run. Keep `lhmpp_decoder_precision.py` beside the probe. Run the comparison in the same experimental Python environment:
+
+```bash
+/tmp/dfl-fullbody-env/bin/python scripts/lhmpp_precision_comparison.py --control-dir /path/to/control --candidate-dir /path/to/fp16-channels-last --output-dir /path/to/audit
+```
+
+[Transcribed summary](evidence/lhmpp-t4-decoder-precision-summary.json). Raw reports, frames, traces, clips and comparisons are retained under `/kaggle/working/dfl-fullbody-evidence/decoder-precision-20261106-091159/`. The accepted candidate is `fp16-channels-last/`; its audit is `layout-audit/`. FP16-only evidence remains in `fp16/` and `audit/`.
+
+![Verified decoder optimization on Kaggle](evidence/lhmpp-t4-decoder-precision-proof.jpg)
+
+The optimized mode is available explicitly for further experiments; default inference is unchanged. Next build a separate cached-avatar worker accepting motion frames, then evaluate public body-pose tracking and retargeting. The 7.4 FPS result is sufficient to proceed with a prototype integration gate, not a claim of smooth production live video. Live webcam control, synchronized lips, avatar WebRTC streaming, long-session stability and OBS output remain pending.
+
+All changes are confined to experimental scripts, tests and evidence on the existing branch. Master, the desktop app and the working face worker are unchanged. No paid GPU service was started.
