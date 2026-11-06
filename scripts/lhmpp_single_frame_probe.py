@@ -146,9 +146,11 @@ def main():
         motion['render_intrs'][..., 1, 2] -= framing['top']
         motion['render_intrs'][..., 0, :] *= sx
         motion['render_intrs'][..., 1, :] *= sy
+        motion['render_intrs'][..., 0, 2] += framing['pad_x']
         params = motion['smplx_params']
         params['focal'] *= torch.tensor([sx, sy])
         params['princpt'] = (params['princpt'] - torch.tensor([framing['left'], framing['top']])) * torch.tensor([sx, sy])
+        params['princpt'][..., 0] += framing['pad_x']
         params['img_size_wh'][...] = torch.tensor([width, height])
         params['betas'] = torch.from_numpy(betas).float().reshape(1, -1)
         motion['ori_size'] = (height, width)

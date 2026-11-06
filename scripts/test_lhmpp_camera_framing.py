@@ -31,6 +31,13 @@ class CameraFramingTests(unittest.TestCase):
             with self.subTest(box=box), self.assertRaises(ValueError):
                 framing_transform(1280, 720, 420, box)
 
+    def test_patch_rounding_preserves_body_proportions(self):
+        transform = framing_transform(1280, 720, 420, [301, 121, 904, 714])
+        focal, _ = transform_intrinsics([900, 850], [640, 360], transform)
+        self.assertAlmostEqual(focal[0] / 900, focal[1] / 850)
+        self.assertGreaterEqual(transform['pad_x'], 0)
+        self.assertLess(transform['pad_x'], 7)
+
 
 if __name__ == '__main__':
     unittest.main()
