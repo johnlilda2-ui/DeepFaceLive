@@ -9,6 +9,7 @@ import gc
 import importlib.util
 import json
 import os
+import random
 from pathlib import Path
 import subprocess
 import sys
@@ -65,6 +66,12 @@ def main():
         if not torch.cuda.is_available():
             raise RuntimeError('CUDA required; CPU fallback is forbidden')
         Accelerator()
+        # Fixed RNG inputs make separate-process allocator A/B runs comparable.
+        random.seed(0)
+        np.random.seed(0)
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+        report['random_seed'] = 0
         report.update(gpu=torch.cuda.get_device_name(0), torch=torch.__version__)
         source = ImageOps.pad(Image.open(reference).convert('RGB'), (504, 840),
                               color='white', method=Image.Resampling.LANCZOS)
