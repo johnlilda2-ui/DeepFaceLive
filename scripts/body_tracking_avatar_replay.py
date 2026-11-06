@@ -15,11 +15,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('runtime-root', 'model-dir', 'reference', 'motion-jsonl', 'driver-video', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--driver-kind', choices=('synthetic', 'consented-human'), default='synthetic',
+                        help='Record the supplied clip provenance; this does not grant consent')
     args = parser.parse_args()
     for name in ('runtime_root', 'model_dir', 'reference', 'motion_jsonl', 'driver_video'):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     output = args.output_dir.resolve(); output.mkdir(parents=True, exist_ok=True)
-    report = {'scope': 'offline_tracked_motion_to_avatar', 'passed': False, 'live_verified': False}
+    report = {'scope': 'offline_tracked_motion_to_avatar', 'passed': False, 'live_verified': False,
+              'driver_kind': args.driver_kind}
     worker = None
     try:
         if args.motion_jsonl.stat().st_size > 1024**2:
@@ -100,13 +103,15 @@ def main():
             cuda_compute_kernel_events=len(kernels), foreground_bounds=bounds,
             edge_contact_frames=edge, first_last_frame_mae=variation,
             before_close=worker.snapshot(),
-            limitations=['Synthetic driving clip only','Pelvis-locked body motion',
+            limitations=[('Synthetic driving clip only' if args.driver_kind == 'synthetic'
+                           else 'Short consented-human driving clip only'),'Pelvis-locked body motion',
                          'Approximate limb twist; neutral fingers and facial expressions',
                          'Profiled render time is not an end-to-end live FPS measurement'])
         worker.close()
         report['after_close'] = worker.snapshot()
         stats = report['after_close']['backend']
         if (stats['avatar_reconstructions'] != 1 or not stats['model_python_released']
+                or stats['cache_present'] or report['after_close']['close_error'] is not None
                 or stats['allocated_after_close'] > 1024**2 or edge or variation < 0.1):
             raise RuntimeError('Avatar motion, framing or cleanup screening failed')
         report['passed'] = True
