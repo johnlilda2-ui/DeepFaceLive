@@ -6,14 +6,26 @@ let pollingFailureSince = null;
 let uploading = false;
 let selectedPhotoReady = false;
 let renderingMode = 'face';
+let outputWindow = null, disconnectGrace, lastInputMode = 'camera';
 const POLL_RETRY_MS = 15000;
 const message = value => { $('status').textContent = value; };
 function buttons(running) {
   $('camera').disabled = running || uploading; $('demo').disabled = running || uploading;
   $('stop').disabled = !running; $('token').disabled = running || uploading;
+  $('reconnect').disabled = running || uploading;
   for (const id of ['identityPhoto','photoConsent','uploadIdentity','swapEnabled','preserveMouth'])
     $(id).disabled = running || uploading;
-  if (renderingMode === 'portrait') $('preserveMouth').disabled = true;
+  if (renderingMode === 'portrait' || renderingMode === 'avatar') $('preserveMouth').disabled = true;
+}
+function syncOutputWindow() {
+  try {
+    if (!outputWindow || outputWindow.closed) return;
+    const video = outputWindow.document.getElementById('processedVideo');
+    if (!video) return;
+    video.srcObject = $('output').srcObject;
+    outputWindow.document.getElementById('notice').hidden = Boolean(video.srcObject);
+    if (video.srcObject) void video.play().catch(() => {});
+  } catch (_) { /* A user-navigated window is no longer an output target. */ }
 }
 async function api(path, options = {}) {
   const response = await fetch(path, {cache:'no-store', ...options,
@@ -35,9 +47,11 @@ async function stop(reason = 'Stopped. Camera and cloud session released.') {
   pollingFailureSince = null;
   controller?.abort(); controller = null;
   clearInterval(polling); clearInterval(rendering); clearTimeout(connectionDeadline);
+  clearTimeout(disconnectGrace);
   const oldPeer = peer; peer = null; oldPeer?.close();
   stream?.getTracks().forEach(track => track.stop()); stream = null;
   $('local').srcObject = null; $('output').srcObject = null;
+  syncOutputWindow(); $('obsOutput').disabled = true;
   $('fullscreen').disabled = true;
   $('connection').textContent = 'Not connected';
   if (oldId && oldToken) {
@@ -146,6 +160,7 @@ async function start(mode) {
     connectionToken = ''; message('Open this page using HTTPS or localhost to use video.'); return;
   }
   const myEpoch = ++epoch;
+  lastInputMode = mode;
   buttons(true); sessionId = crypto.randomUUID(); controller = new AbortController();
   $('frames').textContent = '0'; $('processing').textContent = '0 frames';
   try {
@@ -153,6 +168,16 @@ async function start(mode) {
     const config = await api('/config', {signal:controller.signal});
     if (myEpoch !== epoch) return;
     renderingMode = config.renderingMode || 'face';
+    $('identityControls').hidden = renderingMode === 'avatar';
+    $('swapEnabled').closest('label').hidden = renderingMode === 'avatar';
+    $('preserveMouth').closest('label').hidden = renderingMode === 'avatar';
+    $('demo').hidden = renderingMode === 'avatar';
+    if (renderingMode === 'avatar') {
+      $('swapEnabled').checked = true; $('preserveMouth').checked = false;
+      $('preserveMouth').disabled = true;
+      $('modeNotice').textContent = 'Experimental full-body avatar: keep your whole body in view. Start facing forward with your head level. Motion may be slow on this T4. Audio is not sent in this preview.';
+      if (mode !== 'camera') throw new Error('Use Start camera with your whole body visible for the full-body avatar.');
+    }
     if (renderingMode === 'portrait') {
       $('preserveMouth').checked = false; $('preserveMouth').disabled = true;
       $('swapLabel').textContent = 'Animate portrait (turn off before starting to compare the original cloud return)';
@@ -181,10 +206,20 @@ async function start(mode) {
       iceTransportPolicy:config.relayOnly ? 'relay' : 'all'});
     const currentPeer = peer;
     peer.ontrack = event => {if (myEpoch !== epoch) return;
-      $('output').srcObject = new MediaStream([event.track]); $('fullscreen').disabled = false;};
+      $('output').srcObject = new MediaStream([event.track]); $('fullscreen').disabled = false;
+      $('obsOutput').disabled = false; syncOutputWindow();};
     peer.onconnectionstatechange = () => {
       if (myEpoch !== epoch) return;
       $('connection').textContent = currentPeer.connectionState;
+      if (currentPeer.connectionState !== 'disconnected') clearTimeout(disconnectGrace);
+      if (currentPeer.connectionState === 'disconnected') {
+        clearTimeout(disconnectGrace);
+        message('Video connection interrupted. Allowing eight seconds to recover…');
+        disconnectGrace = setTimeout(() => {
+          if (myEpoch === epoch && currentPeer.connectionState === 'disconnected')
+            void stop('Video connection was lost. Press Reconnect to start a fresh session.');
+        }, 8000);
+      }
       if (currentPeer.connectionState === 'connected') {clearTimeout(connectionDeadline);
         message('Video connected. The right preview is returning from the cloud.');}
       if (currentPeer.connectionState === 'failed') void stop(mediaFailure);
@@ -214,6 +249,7 @@ async function start(mode) {
 $('camera').addEventListener('click',()=>void start('camera'));
 $('demo').addEventListener('click',()=>void start('demo'));
 $('stop').addEventListener('click',()=>void stop());
+$('reconnect').addEventListener('click',()=>void start(renderingMode === 'avatar' ? 'camera' : lastInputMode));
 $('identityPhoto').addEventListener('change', () => {
   const file = $('identityPhoto').files[0];
   selectedPhotoReady = false;
@@ -254,8 +290,20 @@ $('uploadIdentity').addEventListener('click', async () => {
   finally { uploading = false; buttons(false); }
 });
 $('fullscreen').addEventListener('click',()=>void $('output').requestFullscreen());
+$('obsOutput').addEventListener('click', () => {
+  if (!$('output').srcObject) return;
+  outputWindow = window.open('/output', 'dfl-processed-output', 'popup,width=720,height=900');
+  if (!outputWindow) message('Allow this output window, then add it to OBS using Window Capture.');
+  else syncOutputWindow();
+});
+window.addEventListener('message', event => {
+  if (event.origin === location.origin && event.source === outputWindow &&
+      event.data?.type === 'dfl-output-ready') syncOutputWindow();
+});
 window.addEventListener('pagehide', () => {
   if (sessionId && connectionToken) void fetch(`/session/${encodeURIComponent(sessionId)}`,
     {method:'DELETE',headers:{Authorization:`Bearer ${connectionToken}`},keepalive:true}).catch(()=>{});
   controller?.abort(); peer?.close();
+  $('output').srcObject = null; syncOutputWindow();
   stream?.getTracks().forEach(track => track.stop());});
+

@@ -130,8 +130,10 @@ class SessionManager:
                 raise web.HTTPGone(text='This connection attempt was stopped. Start a new session.')
             if self.session is not None:
                 raise web.HTTPConflict(text='The worker already has an active session. Stop it first.')
-            if getattr(self.worker,'mode','face') == 'portrait' and preserve_mouth:
-                raise ValueError('Real-mouth overlay is unavailable in portrait mode.')
+            if getattr(self.worker,'mode','face') in ('portrait','avatar') and preserve_mouth:
+                raise ValueError('Real-mouth overlay is unavailable in avatar modes.')
+            if getattr(self.worker,'mode','face') == 'avatar' and not swap_enabled:
+                raise ValueError('Full-body avatar mode does not return the source camera.')
             if hasattr(self.worker,'reset_motion'):
                 self.worker.reset_motion()
             pc = RTCPeerConnection(self.configuration)
@@ -239,7 +241,8 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
 
     @web.middleware
     async def protect(request, handler):
-        if request.path != '/' and request.path not in ('/client.js', '/client.css', '/demo.png'):
+        if request.path != '/' and request.path not in ('/client.js', '/client.css', '/demo.png',
+                                                       '/output', '/output.js', '/output.css'):
             supplied = request.headers.get('Authorization', '')
             if not secrets.compare_digest(supplied.encode(), ('Bearer ' + token).encode()):
                 raise web.HTTPUnauthorized(text='A valid connection token is required.')
@@ -263,7 +266,10 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
     async def asset(request):
         files = {'/': ('webrtc_client.html', 'text/html'),
                  '/client.js': ('webrtc_client.js', 'application/javascript'),
-                 '/client.css': ('webrtc_client.css', 'text/css')}
+                 '/client.css': ('webrtc_client.css', 'text/css'),
+                 '/output': ('obs_output.html', 'text/html'),
+                 '/output.js': ('obs_output.js', 'application/javascript'),
+                 '/output.css': ('obs_output.css', 'text/css')}
         filename, mime = files[request.path]
         return web.Response(text=(Path(__file__).parent / filename).read_text(), content_type=mime)
 
@@ -321,6 +327,9 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
     app.router.add_get('/', asset)
     app.router.add_get('/client.js', asset)
     app.router.add_get('/client.css', asset)
+    app.router.add_get('/output', asset)
+    app.router.add_get('/output.js', asset)
+    app.router.add_get('/output.css', asset)
     app.router.add_get('/demo.png', demo)
     app.router.add_get('/config', config)
     app.router.add_post('/identity', identity)
@@ -372,7 +381,9 @@ def main():
     parser.add_argument('--allowed-origin', action='append', default=[])
     parser.add_argument('--relay-only', action='store_true')
     parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
-    parser.add_argument('--mode', choices=['face','portrait'], default='face')
+    parser.add_argument('--mode', choices=['face','portrait','avatar'], default='face')
+    parser.add_argument('--avatar-config', type=Path, help='Private prepared LHM++/tracker configuration JSON.')
+    parser.add_argument('--gpu-python', help='Prepared isolated LHM++ Python executable.')
     parser.add_argument('--portrait-runtime', help='Pinned runtime directory for the optional LivePortrait engine.')
     parser.add_argument('--portrait-engine',choices=['lia','liveportrait'],default='lia')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
@@ -382,9 +393,24 @@ def main():
     if len(token) < 32:
         raise ValueError('Connection token must contain at least 32 characters.')
     ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
-    if args.mode == 'portrait' and args.diagnostic_cpu:
-        parser.error('Portrait mode requires GPU; diagnostic CPU mode cannot enable it.')
-    if args.mode == 'portrait':
+    if args.mode in ('portrait','avatar') and args.diagnostic_cpu:
+        parser.error('Avatar modes require GPU; diagnostic CPU mode cannot enable them.')
+    if args.mode == 'avatar':
+        if not args.avatar_config or not args.gpu_python:
+            parser.error('Avatar mode needs --avatar-config and --gpu-python.')
+        from avatar_stream_tracker import MediaPipeAvatarTracker
+        from avatar_pipe_client import AvatarPipeClient
+        from headless_lhmpp_stream_worker import HeadlessLHMStreamWorker
+        config = json.loads(args.avatar_config.read_text())
+        Path(args.evidence_dir).mkdir(parents=True,exist_ok=True)
+        tracker = MediaPipeAvatarTracker(config)
+        try:
+            renderer = AvatarPipeClient(args.gpu_python,args.avatar_config,
+                                        Path(args.evidence_dir)/'avatar-gpu.log')
+        except BaseException:
+            tracker.close();raise
+        worker = HeadlessLHMStreamWorker(tracker,renderer)
+    elif args.mode == 'portrait':
         if not args.source_image:
             parser.error('Portrait mode needs --source-image.')
         if args.portrait_engine == 'liveportrait':
@@ -422,3 +448,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

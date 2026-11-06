@@ -58,6 +58,11 @@ class ProcessedVideoTrack(MediaStreamTrack):
                 image = frame.to_ndarray(format='bgr24')
                 if not self.swap_enabled:
                     result, status = image, 'bypass'
+                elif hasattr(self.worker, 'process_video'):
+                    if self.preserve_mouth:
+                        raise ValueError('Source-mouth overlay is unavailable for this worker')
+                    result, status = await asyncio.to_thread(self.worker.process_video, image,
+                                                            float(frame.pts * frame.time_base) * 1000)
                 elif self.preserve_mouth:
                     result, status = await asyncio.to_thread(self.worker.process_frame, image, preserve_mouth=True)
                 else:
@@ -118,3 +123,4 @@ class ProcessedVideoTrack(MediaStreamTrack):
             self.processing = None
             if isinstance(results[0], Exception):
                 raise results[0]
+

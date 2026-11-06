@@ -4,7 +4,7 @@
 <header><span class="eyebrow">DEEPFACELIVE · CLOUD EXPERIMENT</span><h1>Your camera. Cloud processing.</h1><p>Use your own or consented faces. Audio is never requested.</p></header>
 <section class="controls" aria-label="Connection controls">
 <label for="token">Connection token</label><input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the private token from your cloud session">
-<div class="identity-controls"><label for="identityPhoto">Face photo to use for the swap</label><input id="identityPhoto" type="file" accept="image/jpeg,image/png">
+<div class="identity-controls" id="identityControls"><label for="identityPhoto">Face photo to use for the swap</label><input id="identityPhoto" type="file" accept="image/jpeg,image/png">
 <img id="identityPreview" alt="Selected face photo" hidden>
 <label class="check"><input id="photoConsent" type="checkbox"> I have permission to use this face photo.</label>
 <button id="uploadIdentity" class="secondary">Use this face photo</button>
@@ -12,11 +12,12 @@
 <p id="modeNotice">Face-swap mode changes the face region; hair and body stay from your camera.</p>
 <label class="check"><input id="swapEnabled" type="checkbox" checked> <span id="swapLabel">Swap face (turn off before starting to compare the original cloud return)</span></label>
 <label class="check"><input id="preserveMouth" type="checkbox"> Preserve my real mouth and lip movements (may retain some of my appearance)</label>
-<div class="actions"><button id="camera">Start camera</button><button id="demo" class="secondary">Test demo</button><button id="stop" class="secondary" disabled>Stop</button></div>
+<div class="actions"><button id="camera">Start camera</button><button id="demo" class="secondary">Test demo</button><button id="stop" class="secondary" disabled>Stop</button><button id="reconnect" class="secondary">Reconnect</button></div>
 <p id="status" role="status" aria-live="polite">Ready. Your camera starts only when you press Start camera.</p>
 </section>
-<section class="previews" aria-label="Video previews"><article><h2>Local input</h2><video id="local" autoplay muted playsinline></video></article><article><div class="video-heading"><h2>Cloud return</h2><button id="fullscreen" class="small secondary" disabled>Fullscreen output</button></div><video id="output" autoplay muted playsinline></video></article></section>
+<section class="previews" aria-label="Video previews"><article><h2>Local input</h2><video id="local" autoplay muted playsinline></video></article><article><div class="video-heading"><h2>Cloud return</h2><button id="fullscreen" class="small secondary" disabled>Fullscreen output</button><button id="obsOutput" class="small secondary" disabled>Open OBS output</button></div><video id="output" autoplay muted playsinline></video></article></section>
 <section class="diagnostics" aria-label="Connection diagnostics"><div><span>Connection</span><strong id="connection">Not connected</strong></div><div><span>Received frames</span><strong id="frames">0</strong></div><div><span>Cloud processing</span><strong id="processing">0 frames</strong></div><div><span>Network path</span><strong id="network">Not selected</strong></div><div><span>Face result</span><strong id="faceResult">Waiting</strong></div></section>
 <p class="footnote">Keep this tab open while connected. Stop releases the camera and the cloud session. Tokens are kept in this tab only.</p>
 <canvas id="demoCanvas" width="640" height="480" hidden></canvas>
 </main></body></html>
+
