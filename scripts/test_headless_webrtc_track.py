@@ -17,34 +17,44 @@ class Source(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self.counter = 0
+        self.five_frames = asyncio.Event()
 
     async def recv(self):
         await asyncio.sleep(.005)
         frame = VideoFrame.from_ndarray(np.full((64, 64, 3), 40, np.uint8), format='bgr24')
         frame.pts, frame.time_base = self.counter * 3000, Fraction(1, 90000)
         self.counter += 1
+        if self.counter >= 5:
+            self.five_frames.set()
         return frame
-
-
-class SlowWorker:
-    def process_frame(self, frame):
-        time.sleep(.04)
-        return 255 - frame, 'processed'
 
 
 class TrackTests(unittest.IsolatedAsyncioTestCase):
     async def test_backpressure_and_timestamps(self):
+        release = threading.Event()
+        class GatedWorker:
+            def process_frame(self, frame):
+                if not release.wait(2):
+                    raise RuntimeError('Test did not release inference')
+                return 255 - frame, 'processed'
         source = Source()
-        track = ProcessedVideoTrack(source, SlowWorker())
+        track = ProcessedVideoTrack(source, GatedWorker())
+        receiving = asyncio.create_task(track.recv())
         try:
-            first = await asyncio.wait_for(track.recv(), 2)
-            second = await asyncio.wait_for(track.recv(), 2)
-            self.assertGreater(second.pts, first.pts + 3000)
-            self.assertEqual(second.time_base, Fraction(1, 90000))
+            # Force five incoming frames while first inference is blocked. This
+            # validates backpressure independently of CI scheduling or CPU speed.
+            await asyncio.wait_for(source.five_frames.wait(), 2)
             self.assertGreater(track.dropped, 0)
             self.assertLessEqual(track.pending.qsize(), 1)
+            release.set()
+            first = await asyncio.wait_for(receiving, 2)
+            second = await asyncio.wait_for(track.recv(), 2)
+            self.assertGreaterEqual(second.pts, first.pts + 12000)
+            self.assertEqual(second.time_base, Fraction(1, 90000))
             self.assertEqual(int(second.to_ndarray(format='bgr24')[0, 0, 0]), 215)
         finally:
+            release.set()
+            await asyncio.gather(receiving, return_exceptions=True)
             await track.aclose()
         self.assertEqual(source.readyState, 'ended')
 
