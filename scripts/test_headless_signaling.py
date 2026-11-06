@@ -162,6 +162,23 @@ class SignalingTests(AioHTTPTestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_photo_formats_rotation_and_dimension_limits(self):
+        from PIL import Image
+        for kind in ('JPEG','PNG'):
+            with self.subTest(kind=kind):
+                photo = io.BytesIO()
+                image = Image.new('RGB',(128,64),(200,100,50))
+                exif = Image.Exif()
+                exif[274] = 6
+                image.save(photo,format=kind,exif=exif)
+                decoded = server.decode_identity(photo.getvalue())
+                self.assertEqual(decoded.shape,(128,64,3))
+                self.assertGreater(int(decoded[0,0,2]),int(decoded[0,0,0]))
+        photo = io.BytesIO()
+        Image.new('RGB',(5000,64)).save(photo,format='PNG')
+        with self.assertRaisesRegex(ValueError,'4096'):
+            server.decode_identity(photo.getvalue())
+
     def test_turn_requires_credentials_and_relay_requires_turn(self):
         with self.assertRaises(ValueError):
             server.validate_ice_servers([{'urls':'turn:relay.invalid:3478'}])

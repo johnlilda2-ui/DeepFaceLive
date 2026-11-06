@@ -36,7 +36,7 @@ def decode_identity(data):
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(data)) as image:
-                if image.format not in ('JPEG', 'PNG') or image.n_frames != 1:
+                if image.format not in ('JPEG', 'PNG') or getattr(image, 'n_frames', 1) != 1:
                     raise ValueError('Choose a single JPEG or PNG image.')
                 width, height = image.size
                 if min(width, height) < 64 or max(width, height) > 4096 or width * height > 8_000_000:

@@ -82,6 +82,11 @@ async def main():
                 assert upload_change > .1, 'Changing the uploaded identity did not change output'
                 response = await http.post(url+'/identity',headers=photo_headers,data=Path(args.source_image).read_bytes())
                 assert response.status == 200, await response.text()
+                ok, jpeg = cv2.imencode('.jpg', cv2.imread(args.source_image))
+                assert ok
+                response = await http.post(url+'/identity',headers={**headers,'Content-Type':'image/jpeg'},data=jpeg.tobytes())
+                assert response.status == 200, await response.text()
+                expected, _ = await asyncio.to_thread(worker.process_frame,target)
                 with_mouth, _ = await asyncio.to_thread(worker.process_frame,target,preserve_mouth=True)
                 mouth_change = float(np.abs(with_mouth.astype(float)-expected).mean())
                 assert mouth_change > .01, 'Mouth preservation did not change output'
