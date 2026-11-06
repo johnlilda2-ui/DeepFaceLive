@@ -22,15 +22,19 @@ def main():
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
     if revision != '906b5d9fb967ab42efb92f6fa55bf22cac86b653':
         raise RuntimeError('Unexpected upstream revision')
-    python = next(Path('/kaggle/working/dfl-fullbody-python').glob('cpython-3.10*/bin/python3.10'))
     env_python = '/tmp/dfl-fullbody-env/bin/python'
     env = os.environ.copy()
     env.update(LD_LIBRARY_PATH='/usr/local/nvidia/lib64', TORCH_CUDA_ARCH_LIST='7.5',
-               MAX_JOBS='2', UV_CACHE_DIR='/tmp/dfl-fullbody-package-cache')
+               MAX_JOBS='2', UV_CACHE_DIR='/tmp/dfl-fullbody-package-cache',
+               UV_PYTHON_INSTALL_DIR='/tmp/dfl-fullbody-python')
     def run(command, cwd=root, timeout=240):
         print('RUN', command[:5], flush=True)
         subprocess.run(command, cwd=cwd, env=env, check=True, timeout=timeout)
     if not Path(env_python).exists():
+        # Restored /kaggle/working snapshots may lose executable permissions.
+        # Restore only the experimental interpreter on the executable temp disk.
+        run(['uv', 'python', 'install', '3.10'], timeout=90)
+        python = next(Path('/tmp/dfl-fullbody-python').glob('cpython-3.10*/bin/python3.10'))
         run(['uv', 'venv', '--python', str(python), '/tmp/dfl-fullbody-env'], timeout=30)
     run(['uv', 'pip', 'install', '--python', env_python, 'pip==25.3', 'setuptools==74.0.0', 'wheel==0.43.0'])
     excluded = ('pointops', 'diff-gaussian-rasterization', 'simple-knn')
