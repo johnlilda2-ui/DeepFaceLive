@@ -23,6 +23,7 @@ def main():
     for name in ('runtime-root', 'model-dir', 'reference', 'pose-json', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--t4-memory-efficient-attention', action='store_true')
+    parser.add_argument('--reuse-render-allocator', action='store_true')
     parser.add_argument('--frames', type=int, default=1)
     parser.add_argument('--motion-stride', type=int, default=5)
     parser.add_argument('--fps', type=int, default=6)
@@ -115,6 +116,9 @@ def main():
         if args.t4_memory_efficient_attention:
             from lhmpp_t4_attention import enable_t4_attention
             report['attention_adapter'] = enable_t4_attention(model)
+        if args.reuse_render_allocator:
+            from lhmpp_render_allocator import enable_render_allocator_reuse
+            report['allocator_adapter'] = enable_render_allocator_reuse(model, torch)
         helper_path = root / 'scripts/inference/to_gs_ply.py'
         spec = importlib.util.spec_from_file_location('lhmpp_pose_helpers', helper_path)
         helper = importlib.util.module_from_spec(spec)
@@ -222,6 +226,8 @@ def main():
                     batch_size=1, device='cuda', infer_output_renderer='neural')
             with torch.inference_mode():
                 render_cached()  # one explicit warmup, excluded from measurements
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
                 samples = []
                 for repeat in range(args.benchmark_repeats):
                     timings['render'].clear()
@@ -241,8 +247,11 @@ def main():
                 'warmup_sequences': 1, 'repeats': samples,
                 'median_fps_including_cpu_and_readback': float(np.median(
                     [sample['fps_including_cpu_and_readback'] for sample in samples])),
+                'peak_allocated_bytes': torch.cuda.max_memory_allocated(),
+                'peak_reserved_bytes': torch.cuda.max_memory_reserved(),
                 'reconstruction_excluded': True, 'video_encoding_excluded': True,
                 'live_tracking_and_network_excluded': True}
+        np.save(output / 'frames.npy', frames, allow_pickle=False)
         frame = frames[0]
         if frame.std() < 1:
             raise RuntimeError('Frame is effectively blank; visual verification required')
