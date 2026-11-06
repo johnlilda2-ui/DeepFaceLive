@@ -1,0 +1,46 @@
+{
+  "scope": "offline_15_second_recorded_avatar_test",
+  "code_commit": "c2f8bf7ab92ae96bfa4df5a3c58b46597af16fda",
+  "gpu": "Tesla T4",
+  "input": {
+    "frames": 180,
+    "fps": 12,
+    "duration_seconds": 15,
+    "private": true,
+    "consent_authorized": true
+  },
+  "body": {
+    "accepted": 180,
+    "total": 180,
+    "coverage_passed": true
+  },
+  "hands": {
+    "left_tracked": 169,
+    "right_tracked": 173,
+    "total": 180,
+    "coverage_passed": true
+  },
+  "render": {
+    "frames": 180,
+    "cuda_compute_kernel_events": 170100,
+    "held_frames": [],
+    "edge_contact_frames": [],
+    "setup_seconds": 42.55063552299998,
+    "profiled_render_seconds": 116.38181762499971,
+    "output": [
+      518,
+      630
+    ],
+    "cleanup_allocated_bytes": 6144,
+    "execution_passed": true
+  },
+  "visual_review": {
+    "head": "more upright in reviewed frames",
+    "hands": "distorted in raised-hand poses; individual fingers remain unclear",
+    "photorealism_verified": false,
+    "live_verified": false,
+    "lip_sync": false
+  },
+  "local_tests_passed": 20,
+  "paid_services_started": false
+}
