@@ -76,7 +76,7 @@ def audit(control_dir, reuse_dir, output_dir):
     h, w = arrays[0].shape[1:3]
     canvas = Image.new('RGB', (w * 3, h * 2 + 70), 'white')
     draw = ImageDraw.Draw(canvas)
-    draw.text((10, 10), f'Control {a:.2f} FPS | Reuse {b:.2f} FPS | Exact raw pixels across all 18 frames', fill='black')
+    draw.text((10, 10), f'Control {a:.2f} FPS | Reuse {b:.2f} FPS | Raw max difference: {int(difference.max())}/255', fill='black')
     for row, frames in enumerate(arrays):
         for col, idx in enumerate((0, 5, 17)):
             x, y = col * w, 55 + row * (h + 5)
