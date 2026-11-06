@@ -25,6 +25,7 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--t4-memory-efficient-attention', action='store_true')
     parser.add_argument('--reuse-render-allocator', action='store_true')
+    parser.add_argument('--decoder-fp16', action='store_true')
     parser.add_argument('--frames', type=int, default=1)
     parser.add_argument('--motion-stride', type=int, default=5)
     parser.add_argument('--fps', type=int, default=6)
@@ -126,6 +127,9 @@ def main():
         if args.reuse_render_allocator:
             from lhmpp_render_allocator import enable_render_allocator_reuse
             report['allocator_adapter'] = enable_render_allocator_reuse(model, torch)
+        if args.decoder_fp16:
+            from lhmpp_decoder_precision import enable_decoder_fp16
+            report['decoder_precision'] = enable_decoder_fp16(model, torch)
         helper_path = root / 'scripts/inference/to_gs_ply.py'
         spec = importlib.util.spec_from_file_location('lhmpp_pose_helpers', helper_path)
         helper = importlib.util.module_from_spec(spec)
