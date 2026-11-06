@@ -33,6 +33,12 @@ def main():
     if not root.exists():
         subprocess.run(['git','clone','--filter=blob:none','--no-checkout',
                         'https://github.com/KlingAIResearch/LivePortrait',str(root)],check=True)
+    if not (root/'.git').is_dir():
+        raise ValueError('Portrait runtime must be its own official dependency checkout.')
+    origin = subprocess.check_output(['git','-C',str(root),'remote','get-url','origin'],text=True).strip().removesuffix('.git').rstrip('/')
+    if origin not in ('https://github.com/KlingAIResearch/LivePortrait',
+                      'https://github.com/KlingTeam/LivePortrait','https://github.com/KwaiVGI/LivePortrait'):
+        raise ValueError('Refusing to change a checkout that is not the official portrait runtime.')
     subprocess.run(['git','-C',str(root),'fetch','--depth','1','origin',CODE_REVISION],check=True)
     subprocess.run(['git','-C',str(root),'checkout','--detach',CODE_REVISION],check=True)
     with urllib.request.urlopen('https://huggingface.co/api/models/KlingTeam/LivePortrait/revision/'+WEIGHTS_REVISION+'?blobs=true',timeout=45) as response:

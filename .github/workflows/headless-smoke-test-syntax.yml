@@ -14,6 +14,7 @@ on:
       - "scripts/headless_cloud_worker.py"
       - "scripts/headless_portrait_worker.py"
       - "scripts/prepare_portrait_runtime.py"
+      - "scripts/prepare_portrait_environment.py"
       - "scripts/test_headless_portrait.py"
       - "scripts/test_portrait_gpu.py"
       - "scripts/prepare_headless_env.py"
@@ -50,6 +51,7 @@ jobs:
             scripts/headless_cloud_worker.py
             scripts/headless_portrait_worker.py
             scripts/prepare_portrait_runtime.py
+            scripts/prepare_portrait_environment.py
             scripts/test_headless_portrait.py
             scripts/test_portrait_gpu.py
             scripts/prepare_headless_env.py
@@ -66,7 +68,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile smoke-test script
-        run: python -m py_compile scripts/headless_inference_smoke_test.py
+        run: |
+          python -m py_compile scripts/headless_inference_smoke_test.py
+          python -m py_compile scripts/headless_portrait_worker.py scripts/prepare_portrait_runtime.py scripts/prepare_portrait_environment.py scripts/test_portrait_gpu.py
       - name: Test notebook syntax and CUDA evidence gate (CPU only)
         run: python -m unittest discover -s scripts -p test_headless_cuda_evidence.py
       - name: Install CPU frame-test dependencies
