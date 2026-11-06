@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded CPU MediaPipe -> SMPL-X motion test using a fictional avatar clip."""
+"""Bounded CPU MediaPipe -> SMPL-X motion test using a bounded video clip."""
 import argparse
 import hashlib
 import json
@@ -51,7 +51,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('model', 'input-video', 'camera-template', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--frames', type=int, default=18)
     args = parser.parse_args()
+    if not 2 <= args.frames <= 180:
+        raise ValueError('Require 2..180 source frames')
     output = args.output_dir.resolve(); output.mkdir(parents=True, exist_ok=True)
     if hashlib.sha256(args.model.read_bytes()).hexdigest() != MODEL_SHA256:
         raise RuntimeError('Unexpected tracker model checksum')
@@ -74,7 +77,7 @@ def main():
     records, packets = [], []
     with mp.tasks.vision.PoseLandmarker.create_from_options(options) as detector:
         try:
-            for index in range(18):
+            for index in range(args.frames):
                 ok, bgr = capture.read()
                 if not ok:
                     break
@@ -104,7 +107,8 @@ def main():
         'mediapipe': mp.__version__, 'python': sys.version.split()[0],
         'delegate': 'CPU', 'torch_imported': 'torch' in sys.modules,
         'model_sha256': MODEL_SHA256, 'input_video': str(args.input_video),
-        'source_frames': len(records), 'accepted_frames': len(packets),
+        'source_frames': len(records), 'expected_frames': args.frames, 'fps': float(fps),
+        'accepted_frames': len(packets),
         'coverage': len(packets) / max(1, len(records)),
         'blank_frames': blank_statuses, 'body_only': True,
         'translation_mode': 'pelvis_locked', 'camera_alignment': 'pi around X',
@@ -112,7 +116,7 @@ def main():
     warm = [r['tracking_ms'] + r.get('retarget_ms', 0) for r in records[1:]]
     report['warm_median_tracking_and_retarget_ms'] = float(np.median(warm)) if warm else None
     report['warm_p95_tracking_and_retarget_ms'] = float(np.percentile(warm, 95)) if warm else None
-    report['passed'] = (len(records) == 18 and len(packets) >= 15
+    report['passed'] = (len(records) == args.frames and len(packets) >= int(np.ceil(0.8 * args.frames))
                         and not any(b['packet_emitted'] for b in blank_statuses))
     (output / 'motion.jsonl').write_text(''.join(json.dumps(p) + '\n' for p in packets))
     (output / 'tracking-report.json').write_text(json.dumps(report, indent=2) + '\n')
