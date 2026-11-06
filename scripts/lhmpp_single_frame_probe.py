@@ -22,6 +22,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('runtime-root', 'model-dir', 'reference', 'pose-json', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--t4-memory-efficient-attention', action='store_true')
     args = parser.parse_args()
     root = args.runtime_root.resolve(strict=True)
     model_dir = args.model_dir.resolve(strict=True)
@@ -95,6 +96,9 @@ def main():
         # eval() also returns None. Do not chain it with device placement.
         model.eval()
         model.to('cuda')
+        if args.t4_memory_efficient_attention:
+            from lhmpp_t4_attention import enable_t4_attention
+            report['attention_adapter'] = enable_t4_attention(model)
         helper_path = root / 'scripts/inference/to_gs_ply.py'
         spec = importlib.util.spec_from_file_location('lhmpp_pose_helpers', helper_path)
         helper = importlib.util.module_from_spec(spec)
@@ -141,6 +145,9 @@ def main():
                       frame_shape=list(frame.shape), frame_std=float(frame.std()))
     except Exception:
         report['error'] = traceback.format_exc()
+        if 'torch' in locals() and torch.cuda.is_initialized():
+            report['peak_allocated_bytes'] = torch.cuda.max_memory_allocated()
+            report['peak_reserved_bytes'] = torch.cuda.max_memory_reserved()
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2), flush=True)
     return 0 if report['passed'] else 1
