@@ -1,0 +1,47 @@
+{
+  "code_commit": "1a1955b221249ebae9c31300daedecf450da523c",
+  "scope": "offline_hand_twist_regression",
+  "local_tests": 23,
+  "old_implementation_fails_new_curl_regression": true,
+  "frames": 180,
+  "fps": 12,
+  "duration_seconds": 15,
+  "hand_detection_counts": {
+    "left": 169,
+    "right": 173
+  },
+  "finger_samples_over_150_degrees": {
+    "before": 18,
+    "after": 0
+  },
+  "max_finger_rotation_radians": {
+    "before": {
+      "left": 3.1353923416013467,
+      "right": 1.1395692185996185
+    },
+    "after": {
+      "left": 1.765632961078391,
+      "right": 1.1223655389554679
+    }
+  },
+  "body_head_camera_timeline_packets_unchanged": true,
+  "gpu": {
+    "name": "Tesla T4",
+    "rendered_frames": 180,
+    "cuda_compute_events": 170100,
+    "held_frames": [],
+    "edge_contacts": [],
+    "setup_seconds": 42.31139559100029,
+    "profiled_render_seconds": 114.67724970900008,
+    "execution_passed": true,
+    "allocated_after_close": 6144,
+    "cache_released": true
+  },
+  "visual_quality": {
+    "individual_fingers_still_blurred_or_fused": true,
+    "hand_quality_requirement_met": false
+  },
+  "live_verified": false,
+  "lip_sync": false,
+  "paid_services_started": false
+}
