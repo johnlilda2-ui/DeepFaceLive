@@ -361,7 +361,8 @@ def profile_counts(profile_path):
     return Counter(
         event["args"]["provider"] for event in events
         if event.get("cat") == "Node" and event.get("args", {}).get("provider")
-        and event.get("args", {}).get("op_name") not in ("MemcpyFromHost", "MemcpyToHost")
+        and event.get("args", {}).get("op_name")
+        and not event["args"]["op_name"].startswith("Memcpy")
     )
 
 

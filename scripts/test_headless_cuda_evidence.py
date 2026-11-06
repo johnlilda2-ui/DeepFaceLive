@@ -34,6 +34,25 @@ class EvidenceTests(unittest.TestCase):
             ]))
             self.assertEqual(smoke.profile_counts(path), {"CPUExecutionProvider": 1})
 
+    def test_missing_operation_and_copy_variants_do_not_prove_cuda(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.json"
+            path.write_text(json.dumps([
+                {"cat": "Node", "args": {"provider": "CUDAExecutionProvider"}},
+                {"cat": "Node", "args": {"provider": "CUDAExecutionProvider", "op_name": "MemcpyToDevice"}},
+            ]))
+            self.assertEqual(smoke.profile_counts(path), {})
+
+    def test_session_constructor_is_restored_after_loading_failure(self):
+        original = object()
+        fake_ort = SimpleNamespace(InferenceSession=original)
+        with patch.dict("sys.modules", {"onnxruntime": fake_ort}):
+            with self.assertRaisesRegex(RuntimeError, "model load failed"):
+                with smoke.profiled_sessions(Path("unused"), True):
+                    self.assertIsNot(fake_ort.InferenceSession, original)
+                    raise RuntimeError("model load failed")
+        self.assertIs(fake_ort.InferenceSession, original)
+
     def check_report(self, missing_cuda):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
