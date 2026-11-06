@@ -1,0 +1,55 @@
+{
+  "scope": "official_exavatar_pretrained_human_inference",
+  "upstream_commit": "518f5647c8fa75cb648315c1677fdc105101fe11",
+  "probe_commit": "809bd037e842bc8ddad32997222bb62647d8ce4f",
+  "target": "Official author demonstration avatar; not the generated target",
+  "execution_passed": true,
+  "quality_verified": false,
+  "live_verified": false,
+  "gpu": "Tesla T4",
+  "torch": "2.3.0+cu121",
+  "strict_human_weights_loaded": true,
+  "cuda_compute_events": 2006,
+  "timings": {
+    "512": {
+      "frames": 180,
+      "fps": 7.386223431365033,
+      "median_ms": 135.22154300017064,
+      "p95_ms": 138.6782798495915,
+      "peak_allocated_bytes": 2829885440
+    },
+    "1024": {
+      "frames": 30,
+      "fps": 7.465870746180718,
+      "median_ms": 133.57242549955117,
+      "p95_ms": 137.55616589960482,
+      "peak_allocated_bytes": 2839259136
+    }
+  },
+  "timing_scope": "GPU-synchronized human animation and render; excludes transfer, encoding, tracking and network",
+  "video": {
+    "width": 512,
+    "height": 512,
+    "frames": 180,
+    "fps": 12,
+    "duration_seconds": 15,
+    "size_bytes": 135314
+  },
+  "visual_review": {
+    "frames": [
+      7,
+      24,
+      48,
+      90,
+      150
+    ],
+    "hand_quality_requirement_met": false,
+    "hand_shapes_distorted_or_closed": true,
+    "head_touches_or_is_clipped_by_upper_frame": true,
+    "retargeting_compatibility_verified": false
+  },
+  "allocated_before_process_exit": 43713536,
+  "gpu_memory_used_after_process_exit_mib": 0,
+  "paid_compute_started": false,
+  "training_performed": false
+}
