@@ -1,0 +1,45 @@
+{
+  "scope": "transcribed_summary_of_executed_kaggle_output",
+  "date": "2026-11-06",
+  "probe_commit": "2e4374737041ce7c1c62b42471f1210e1e4117c1",
+  "upstream_commit": "906b5d9fb967ab42efb92f6fa55bf22cac86b653",
+  "gpu": "Tesla T4",
+  "torch": "2.3.0+cu121",
+  "model_revision": "fc9f73664b9bfcc457e96210ddc06fe7caf0d559",
+  "prior_revision": "b683c8f68bede4f318b0bb539730b8e6711d30a0",
+  "runtime_probe_passed": true,
+  "single_frame_passed": true,
+  "short_clip_passed": true,
+  "visual_reviewed": true,
+  "live_verified": false,
+  "strict_weights_loaded": true,
+  "cuda_kernel_count": 21279,
+  "attention_adapter": {
+    "backend": "xformers_cutlass",
+    "module_count": 28,
+    "numerical_max_abs_error": 3.5762786865234375e-7,
+    "weights_changed": false
+  },
+  "reconstruction_seconds": 6.26090159100022,
+  "render_seconds": 4.801961506005682,
+  "profiled_render_fps_excluding_reconstruction": 3.7484681993989106,
+  "profiled_inference_seconds": 21.625281949000055,
+  "peak_allocated_bytes": 5819250688,
+  "peak_reserved_bytes": 7025459200,
+  "encoded_clip": {
+    "codec": "h264",
+    "width": 742,
+    "height": 420,
+    "fps": 6,
+    "duration_seconds": 3,
+    "decoded_frames": 18
+  },
+  "first_last_frame_mean_abs_difference": 6.2531585590210925,
+  "limitations": [
+    "Offline prepared motion only",
+    "Profiling overhead; no steady-state live benchmark",
+    "Coarse face/hands and limb artifacts",
+    "No webcam tracker, live lip synchronization or avatar OBS pipeline"
+  ],
+  "paid_gpu_started": false
+}
