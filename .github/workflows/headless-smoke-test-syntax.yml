@@ -6,6 +6,8 @@ on:
       - experiment/cloud-headless-webrtc
     paths:
       - "scripts/headless_inference_smoke_test.py"
+      - "scripts/headless_cloud_worker.py"
+      - "scripts/test_headless_worker.py"
       - "scripts/test_headless_cuda_evidence.py"
       - "notebooks/kaggle_headless_inference_smoke_test.ipynb"
       - ".github/workflows/headless-smoke-test-syntax.yml"
@@ -23,6 +25,8 @@ jobs:
         with:
           sparse-checkout: |
             scripts/headless_inference_smoke_test.py
+            scripts/headless_cloud_worker.py
+            scripts/test_headless_worker.py
             scripts/test_headless_cuda_evidence.py
             notebooks/kaggle_headless_inference_smoke_test.ipynb
           sparse-checkout-cone-mode: false
@@ -34,3 +38,7 @@ jobs:
         run: python -m py_compile scripts/headless_inference_smoke_test.py
       - name: Test notebook syntax and CUDA evidence gate (CPU only)
         run: python -m unittest discover -s scripts -p test_headless_cuda_evidence.py
+      - name: Install CPU frame-test dependencies
+        run: python -m pip install numpy==2.2.6 opencv-python-headless==4.11.0.86
+      - name: Test worker frame contract and compositing
+        run: python -m unittest discover -s scripts -p test_headless_worker.py

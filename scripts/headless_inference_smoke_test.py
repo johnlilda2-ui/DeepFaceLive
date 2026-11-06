@@ -215,14 +215,18 @@ def load_image(path_text: str, role: str, cv2):
     return image
 
 
-def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int, threshold: float):
+class NoFaceDetected(RuntimeError):
+    """A valid frame has no detectable face; inference errors use other exceptions."""
+
+
+def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int, threshold: float, return_transform: bool = False):
     import numpy as np
     from xlib.face import ELandmarks2D, FLandmarks2D, FRect
 
     height, width = image.shape[:2]
     detections = detector.extract(image, threshold=threshold)[0]
     if len(detections) == 0:
-        raise RuntimeError(
+        raise NoFaceDetected(
             f"No face detected in the {role} image. Use a clear, front-facing image with one visible face."
         )
 
@@ -246,12 +250,12 @@ def detect_and_align_face(image, role: str, detector, marker, coverage: float, o
     global_landmarks = FLandmarks2D.create(ELandmarks2D.L106, landmarks).transform(
         crop_matrix, invert=True
     )
-    aligned_face, _ = global_landmarks.cut(
+    aligned_face, transform = global_landmarks.cut(
         image, coverage=coverage, output_size=output_size, y_offset=-0.15
     )
     if aligned_face is None or aligned_face.size == 0:
         raise RuntimeError(f"Alignment returned an empty face crop for the {role} image.")
-    return aligned_face
+    return (aligned_face, transform) if return_transform else aligned_face
 
 
 def main() -> int:
