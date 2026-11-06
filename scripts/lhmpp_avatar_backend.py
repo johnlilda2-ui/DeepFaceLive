@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+import weakref
 
 UPSTREAM_COMMIT = '906b5d9fb967ab42efb92f6fa55bf22cac86b653'
 
@@ -194,11 +195,17 @@ class LHMAvatarBackend:
         if self.stats['closed']:
             return
         self.stats.update(closed=True, cache_present=False)
+        model_ref = weakref.ref(self.model) if self.model is not None else None
         for name in ('model', 'cache', 'reference_tensor', 'animation_betas', 'mask', 'output_rgb', 'helper'):
             setattr(self, name, None)
         self.betas = self.source = None
         gc.collect()
         if self.torch is not None and self.torch.cuda.is_initialized():
+            self.stats['allocated_after_gc'] = self.torch.cuda.memory_allocated()
+            # The dedicated process owns its runtime/compiler caches too.
+            self.torch._dynamo.reset()
+            gc.collect()
+            self.stats['model_python_released'] = model_ref is None or model_ref() is None
             self.torch.cuda.synchronize()
             self.torch.cuda.empty_cache()
             self.stats.update(allocated_after_close=self.torch.cuda.memory_allocated(),

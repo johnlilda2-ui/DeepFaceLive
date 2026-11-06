@@ -33,6 +33,8 @@ def main():
     parser.add_argument('--framing-box', type=float, nargs=4)
     parser.add_argument('--optimized-decoder', action='store_true')
     args = parser.parse_args()
+    for key in ('runtime_root', 'model_dir', 'reference', 'pose_json', 'baseline_dir'):
+        setattr(args, key, getattr(args, key).resolve(strict=True))
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     report = {'scope': 'offline_cached_avatar_worker', 'passed': False, 'live_verified': False}
@@ -158,7 +160,8 @@ def main():
             report['render_after_close_rejected'] = True
         report['after_close'] = worker.snapshot()
         stats = report['after_close']['backend']
-        if (stats['cache_present'] or report['after_close']['close_error'] is not None
+        if (stats['cache_present'] or not stats.get('model_python_released', False)
+                or report['after_close']['close_error'] is not None
                 or stats['allocated_after_close'] > stats['allocated_before_load'] + 1024**2):
             raise RuntimeError('Avatar GPU state was not released')
         report['passed'] = True
