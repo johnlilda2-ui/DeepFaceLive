@@ -204,3 +204,47 @@ Recovery regression at source `d9b0d714b7bbc5f74f29161b318977bf31442603` complet
 ![Verified Kaggle framing benchmark](evidence/lhmpp-t4-framing-proof.jpg)
 
 Next: investigate bounded rendering optimizations and validate image quality against this baseline before webcam retargeting. Approximately 6 FPS cached rendering is still insufficient evidence for a responsive complete live pipeline. Live lip synchronization, webcam pose/expression tracking, long-session stability, avatar WebRTC transport and OBS output remain unverified. Desktop and existing face-worker files were not changed.
+
+
+## Allocator reuse experiment — 2026-11-06
+
+**Decision: keep disabled by default.** A bounded free Kaggle T4 test measured only a 2.65% cached-rendering gain while reserving more GPU memory. The exact raw-pixel equality gate failed. This experiment does not improve the underlying face, hand or clothing reconstruction quality and does not establish live performance.
+
+| Seeded measurement | Original allocation behavior | Opt-in allocator reuse |
+| --- | ---: | ---: |
+| Three repeat FPS | 6.087, 6.084, 6.022 | 6.259, 6.245, 6.236 |
+| Median FPS | 6.084 | 6.245 |
+| Peak allocated bytes during unprofiled benchmark | 5,220,337,664 | 5,220,413,440 |
+| Peak reserved bytes during unprofiled benchmark | 5,345,640,448 | 7,025,459,200 |
+| CUDA compute-kernel events in verification run | 21,276 | 21,279 |
+| Strict weight loading and GPU inference | PASS | PASS |
+
+Both conditions used the same fictional reference, camera crop, 364×420 output, 18 supplied poses and seed 0. Each had one warmup sequence and three timed repeats with CUDA synchronization. CPU processing and readback are included; reconstruction, encoding, tracking and network are excluded. The initial unseeded attempt had different reconstruction pixels and was not accepted as a controlled quality comparison. Seeding reduced this variability substantially, but it does not promise deterministic CUDA execution.
+
+Across the seeded sequences, 257 of 8,255,520 channel values differed by one intensity level out of 255 (maximum error 1, mean error 0.0000311307). This failed the existing exact-equality gate; the gate was not relaxed. The tiny residual is consistent with floating-point rounding/quantization, but its cause was not isolated. Manual comparison of poses 1, 6 and 18 showed no visible structural change. Both H.264 files decoded 18 frames at 6/1 FPS for 3.000000 seconds. Image quality remains limited by the original reconstruction.
+
+### Changes and audit
+
+- `scripts/lhmpp_render_allocator.py` clones only the pinned model's animation function with a local CUDA proxy. It suppresses the audited per-frame cache release without modifying the global torch.cuda object, other model functions, or upstream files.
+- `scripts/lhmpp_single_frame_probe.py --reuse-render-allocator` is opt-in. Default behavior stays unchanged. Probe RNG inputs are seeded for comparisons, raw RGB sequences are saved with pickle disabled, and the unprofiled benchmark reports separate memory peaks.
+- `scripts/lhmpp_allocator_comparison.py` checks matching reference/poses/camera/seed, CUDA evidence, strict loading, raw frames and decoded video metadata. An equality failure is saved as `passed: false` with a nonzero exit, alongside a comparison image.
+- Three isolation tests passed, including restoration of original behavior after the cloned function raises. Syntax checks passed. The GPU adapter suppressed 90 cache-release calls across verification, warmup and repeats.
+- The first comparison-image label incorrectly asserted exact pixels after the gate failed. The audit caught this, the label now shows measured maximum error, and the comparison was rerun successfully with expected rejection exit 1.
+
+Probe source tested: `d4aa580d9519feddf58700764f37307cde049028`. Final comparison source tested: `db0449cbeb7faf5076cd2b02dd821b7167d93d8b`.
+
+Reproduce using the preceding probe command and identical camera arguments, with `--benchmark-repeats 3` for both runs and `--reuse-render-allocator` only for the second. Compare the two distinct output directories:
+
+```bash
+/tmp/dfl-fullbody-env/bin/python scripts/lhmpp_allocator_comparison.py \
+  --control-dir /path/to/control --reuse-dir /path/to/reuse \
+  --output-dir /path/to/audit
+```
+
+Exit 1 is expected for the recorded experiment because exact pixel equality failed; it must not be reported as a successful promotion.
+
+Evidence: [transcribed summary](evidence/lhmpp-t4-allocator-summary.json). Full reports, raw frames, traces, clips, original rejection log and preserved comparison are under `/kaggle/working/dfl-fullbody-evidence/allocator-benchmark-20261106-085450/`, with the controlled rerun in `seeded/`.
+
+![Allocator A/B audit on Kaggle](evidence/lhmpp-t4-allocator-proof.jpg)
+
+The normal renderer remains the baseline. The next bounded speed investigation should profile the neural decoder and test a precision change against explicit image-quality criteria before connecting webcam pose estimation. Live lips, webcam retargeting, WebRTC avatar transport, long-session stability and OBS output are still pending. No paid compute was started. All changes are confined to experimental scripts and evidence; master, the desktop app and the existing face worker remain unchanged.

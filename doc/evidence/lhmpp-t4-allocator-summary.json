@@ -1,0 +1,101 @@
+{
+  "date": "2026-11-06",
+  "scope": "Offline cached allocator A/B experiment",
+  "provenance": "Transcription of executed Kaggle reports and comparison.json; raw evidence retained in Kaggle output directory.",
+  "probe_commit": "d4aa580d9519feddf58700764f37307cde049028",
+  "comparison_commit": "db0449cbeb7faf5076cd2b02dd821b7167d93d8b",
+  "gpu": "Tesla T4",
+  "random_seed": 0,
+  "reference": "Official fictional 055330c0d988_000.jpg",
+  "render_size": [
+    364,
+    420
+  ],
+  "motion": "BasketBall_I frames 00014 through 00099, stride 5",
+  "output_directory": "/kaggle/working/dfl-fullbody-evidence/allocator-benchmark-20261106-085450/seeded",
+  "passed": false,
+  "reason": "Strict raw-pixel equality failed",
+  "default_enabled": false,
+  "live_verified": false,
+  "control": {
+    "repeat_fps": [
+      6.0869865355802215,
+      6.084211965169818,
+      6.021995841644113
+    ],
+    "sequence_seconds": [
+      2.9571282760007307,
+      2.9584768090007856,
+      2.9890422500002387
+    ],
+    "median_fps": 6.084211965169818,
+    "peak_allocated_bytes": 5220337664,
+    "peak_reserved_bytes": 5345640448,
+    "cuda_compute_kernel_events": 21276
+  },
+  "reuse": {
+    "repeat_fps": [
+      6.25878134839934,
+      6.245425440551661,
+      6.236423699713308
+    ],
+    "sequence_seconds": [
+      2.875959232000241,
+      2.8821095009998317,
+      2.886269577999883
+    ],
+    "median_fps": 6.245425440551661,
+    "peak_allocated_bytes": 5220413440,
+    "peak_reserved_bytes": 7025459200,
+    "cuda_compute_kernel_events": 21279,
+    "suppressed_cache_release_calls": 90
+  },
+  "speedup_percent": 2.6497018234200143,
+  "pixels": {
+    "max_difference": 1,
+    "mean_difference": 0.00003113068589259066,
+    "changed_channel_values": 257,
+    "total_channel_values": 8255520,
+    "frames": 18,
+    "equal": false
+  },
+  "codec_audit_both": {
+    "codec": "h264",
+    "size": [
+      364,
+      420
+    ],
+    "fps": "6/1",
+    "duration_seconds": 3,
+    "decoded_frames": 18
+  },
+  "method": {
+    "warmup_sequences": 1,
+    "repeats": 3,
+    "synchronized_wall_time": true,
+    "includes_cpu_and_readback": true,
+    "excludes": [
+      "reference reconstruction",
+      "video encoding",
+      "network",
+      "live tracking"
+    ]
+  },
+  "validation": {
+    "strict_weight_loading_both": true,
+    "gpu_inference_both": true,
+    "raw_equality_gate": false,
+    "comparison_expected_exit": 1,
+    "isolation_unit_tests_passed": 3,
+    "syntax_validation": true
+  },
+  "initial_unseeded_attempt": {
+    "accepted": false,
+    "raw_mae": 0.47654635928445455,
+    "max_difference": 121,
+    "reason": "Not a controlled reconstruction comparison; repeated with fixed seed",
+    "source_commit": "dacd520dc6410adc991cfe35913c166a6bd3eae0"
+  },
+  "decision": "Keep cache reuse opt-in and disabled by default. Small short-run speed gain does not justify promotion; benchmark reserves about 1.56 GiB more memory and strict equality failed. Tiny residual differences are consistent with floating-point quantization but their cause was not isolated.",
+  "next_gate": "Profile neural decoder and evaluate a bounded precision optimization with explicit quality criteria before live webcam retargeting."
+}
