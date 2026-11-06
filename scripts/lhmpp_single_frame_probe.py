@@ -90,8 +90,11 @@ def main():
         model.load_state_dict(weights, strict=True)
         del weights
         gc.collect()
-        model.eval().to('cuda')
         report['strict_weights_loaded'] = True
+        # Upstream train() overrides nn.Module.train without returning self, so
+        # eval() also returns None. Do not chain it with device placement.
+        model.eval()
+        model.to('cuda')
         helper_path = root / 'scripts/inference/to_gs_ply.py'
         spec = importlib.util.spec_from_file_location('lhmpp_pose_helpers', helper_path)
         helper = importlib.util.module_from_spec(spec)
