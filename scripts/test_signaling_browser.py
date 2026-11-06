@@ -74,12 +74,44 @@ async def main():
                 await page.evaluate("window.savedTestTracks = document.querySelector('#local').srcObject.getTracks()")
                 audio_tracks = await page.evaluate("document.querySelector('#local').srcObject.getAudioTracks().length")
                 assert audio_tracks == 0, 'Audio was captured'
+                if mode == 'Start camera':
+                    failures = {'enabled': True, 'count': 0}
+                    async def interrupt_status(route):
+                        if route.request.method == 'GET' and failures['enabled']:
+                            failures['count'] += 1
+                            await route.fulfill(status=530, body='Temporary tunnel unavailable')
+                        else:
+                            await route.continue_()
+                    await page.route('**/session/*', interrupt_status)
+                    await page.get_by_role('status').filter(has_text='Cloud status link interrupted.').wait_for()
+                    before = await page.evaluate("document.querySelector('#output').getVideoPlaybackQuality().totalVideoFrames")
+                    await page.wait_for_function("previous => document.querySelector('#output').getVideoPlaybackQuality().totalVideoFrames > previous+3", arg=before)
+                    assert await page.evaluate("window.savedTestTracks.every(t=>t.readyState==='live')"), 'Transient HTTP error stopped camera'
+                    failures['enabled'] = False
+                    await page.get_by_role('status').filter(has_text='Cloud connection recovered.').wait_for()
+                    await page.unroute('**/session/*', interrupt_status)
+                    report['transient_530_preserved_video'] = True
                 await page.screenshot(path=str(artifacts / ('demo.png' if mode == 'Test demo' else 'synthetic-camera.png')))
                 await page.get_by_role('button', name='Stop', exact=True).click()
                 await page.get_by_role('status').filter(has_text='Camera and cloud session released.').wait_for(timeout=10000)
                 assert await page.evaluate("window.savedTestTracks.every(t=>t.readyState==='ended')"), 'Camera tracks leaked'
                 assert app[MANAGER].session is None, 'Server slot leaked after Stop'
                 report['sessions'].append({'mode':mode,**stats,'audio_tracks':audio_tracks,'stop_released_resources':True})
+            # A persistent outage must still release local media and the server slot.
+            await page.get_by_role('button', name='Test demo', exact=True).click()
+            await wait_for_return(page)
+            await page.evaluate("window.savedTestTracks = document.querySelector('#local').srcObject.getTracks()")
+            async def persistent_outage(route):
+                if route.request.method == 'GET':
+                    await route.fulfill(status=530, body='Tunnel expired')
+                else:
+                    await route.continue_()
+            await page.route('**/session/*', persistent_outage)
+            await page.get_by_role('status').filter(has_text='Cloud link unavailable or expired.').wait_for(timeout=25000)
+            assert await page.evaluate("window.savedTestTracks.every(t=>t.readyState==='ended')"), 'Persistent outage leaked media'
+            assert app[MANAGER].session is None, 'Persistent outage leaked server session'
+            await page.unroute('**/session/*', persistent_outage)
+            report['persistent_530_released_resources'] = True
             await page.set_viewport_size({'width':390,'height':844})
             assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile horizontal overflow'
             await page.screenshot(path=str(artifacts / 'mobile.png'), full_page=True)

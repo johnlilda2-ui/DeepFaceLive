@@ -2,6 +2,8 @@
 const $ = id => document.getElementById(id);
 let peer, stream, controller, sessionId, connectionToken = '', epoch = 0;
 let polling, rendering, connectionDeadline, pollingBusy = false;
+let pollingFailureSince = null;
+const POLL_RETRY_MS = 15000;
 const message = value => { $('status').textContent = value; };
 function buttons(running) {
   $('camera').disabled = running; $('demo').disabled = running;
@@ -14,7 +16,9 @@ async function api(path, options = {}) {
     const labels = {401:'Connection token rejected.',403:'This page origin is not allowed.',
       409:'The cloud worker is already in use. Stop the other session first.',
       404:'The cloud session ended.',504:'Cloud negotiation timed out. Check STUN/TURN settings.'};
-    throw new Error(labels[response.status] || `Cloud request failed (${response.status}).`);
+    const error = new Error(labels[response.status] || `Cloud request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -22,6 +26,7 @@ async function stop(reason = 'Stopped. Camera and cloud session released.') {
   ++epoch;
   const oldId = sessionId, oldToken = connectionToken;
   sessionId = null; connectionToken = '';
+  pollingFailureSince = null;
   controller?.abort(); controller = null;
   clearInterval(polling); clearInterval(rendering); clearTimeout(connectionDeadline);
   const oldPeer = peer; peer = null; oldPeer?.close();
@@ -63,10 +68,17 @@ async function poll(myEpoch) {
   if (!peer || myEpoch !== epoch || pollingBusy) return;
   pollingBusy = true;
   try {
-    const status = await api(`/session/${encodeURIComponent(sessionId)}`, {signal:controller?.signal});
+    const status = await api(`/session/${encodeURIComponent(sessionId)}`, {
+      signal:AbortSignal.any([controller.signal, AbortSignal.timeout(6000)])});
     if (myEpoch !== epoch || !peer) return;
+    const recovered = pollingFailureSince !== null;
+    pollingFailureSince = null;
     $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped`;
     if (status.error) throw new Error('Cloud video processing failed. Stop and check the cloud log.');
+    if (peer.connectionState === 'connected') {
+      const remaining = Math.max(0, Math.floor(status.expiresIn ?? 0));
+      message(`${recovered ? 'Cloud connection recovered. ' : ''}Video connected. Session ends in ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}. The temporary HTTPS link also has a separate shutdown timer.`);
+    }
     const stats = await peer.getStats();
     let selected;
     for (const report of stats.values()) {
@@ -80,7 +92,21 @@ async function poll(myEpoch) {
       const latency = selected.currentRoundTripTime == null ? '' : ` · ${Math.round(selected.currentRoundTripTime*1000)} ms RTT`;
       $('network').textContent = `${local?.candidateType || '?'} → ${remote?.candidateType || '?'}${latency}`;
     }
-  } catch (error) {if (myEpoch === epoch) await stop(error.message);}
+  } catch (error) {
+    if (myEpoch !== epoch) return;
+    const transient = error instanceof TypeError || error.name === 'TimeoutError' ||
+      error.status === 408 || error.status === 429 || error.status >= 500;
+    if (transient) {
+      pollingFailureSince ??= Date.now();
+      if (Date.now() - pollingFailureSince < POLL_RETRY_MS) {
+        message('Cloud status link interrupted. Retrying for up to 15 seconds; video stays open.');
+        return;
+      }
+      await stop('Cloud link unavailable or expired. Renew the temporary cloud preview, then reconnect.');
+    } else {
+      await stop(error.message);
+    }
+  }
   finally {pollingBusy = false;}
 }
 async function start(mode) {

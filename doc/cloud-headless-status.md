@@ -136,10 +136,9 @@ interpreter aliases in a recognized venv, preserving installed packages.
 
 ### Remaining connection stage
 
-External Windows-to-Kaggle connectivity is not yet tested. Browser signaling,
-NAT/TURN traversal, local webcam capture, and OBS Virtual Camera remain future
-work. The current transport adapter is reusable for that stage; the loopback
-test does not prove reachability through Kaggle's network boundaries.
+The initial loopback test did not prove external connectivity. The subsequent
+physical laptop test below now provides external demo evidence and a user
+report of webcam face swapping. TURN relay and OBS Virtual Camera remain untested.
 
 
 ## Browser and HTTP signaling stage
@@ -149,5 +148,25 @@ ICE diagnostics, and private TURN configuration are implemented. CPU Chromium
 integration and Kaggle GPU HTTP/WebRTC integration passed. Full evidence and the
 laptop test procedure are in [windows-cloud-connection.md](windows-cloud-connection.md).
 
-The server remains private by default. No public HTTPS route was created, and
-physical Windows webcam/OBS tests are still pending.
+The server remains private by default. The user approved a temporary,
+token-protected Cloudflare HTTPS route for the physical laptop test.
+
+## Physical laptop test and preview expiry
+
+The user's screenshots show the fictional demo's original frame and visibly
+swapped return, a connected session, 1,018 received frames and 1,025 processed
+frames. The selected media path was srflx to srflx, with 258–283 ms reported
+network RTT. These counters are not FPS or end-to-end latency measurements.
+The user subsequently confirmed that face swapping worked with their webcam;
+webcam quality and latency have not been independently measured.
+
+The later screenshot showed HTTP 530 and empty previews. Checking the Kaggle
+processes confirmed both the tunnel and GPU server had stopped under the
+preview's explicit 20-minute shutdown timer. This is separate from the server's
+default 10-minute per-session limit and does not establish a CUDA failure.
+
+The browser now displays the server session countdown, tolerates transient
+status/network failures for up to 15 seconds without closing working media,
+and explains persistent link failure or expiry. HTTP authentication, missing
+session and inference failures still end the session immediately. The temporary
+route shutdown timer remains in place; retries cannot renew an expired route.

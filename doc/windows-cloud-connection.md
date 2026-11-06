@@ -80,8 +80,8 @@ mode inverts colors; it does not perform face swapping.
 
 ## External laptop test, after the endpoint is approved
 
-1. Start a temporary HTTPS forwarding route to the loopback server. Public
-   forwarding is a separate action; it has not been started.
+1. Start a temporary HTTPS forwarding route to the loopback server. The user
+   approved and tested a temporary route; a stopped preview needs a fresh route.
 2. Configure the server with `--allowed-origin https://THE-EXACT-PREVIEW-HOST`.
    Proxy forwarding headers are not trusted to choose allowed origins.
 3. Open that HTTPS URL in Chrome or Edge on Windows and enter the private token.
@@ -116,3 +116,20 @@ An additional regression covers Stop arriving before a delayed offer. The server
 retains a bounded, expiring set of stopped request IDs and rejects those late
 offers instead of creating orphan sessions. Reconnect uses a fresh request ID.
 This adds an eighth signaling regression to the original 24-test suite.
+
+## Preview duration and interruptions
+
+The physical laptop demo returned visibly swapped frames over a direct srflx
+media path. The user also reported successful live webcam face swapping.
+OBS output and a TURN relay path are still unverified.
+
+The temporary notebook preview deliberately shuts down after 20 minutes. This
+can produce HTTP 530 once Cloudflare no longer has its tunnel connector. The
+server separately ends each video session after 10 minutes; the client displays
+that session countdown. Neither limit is a GPU performance failure.
+
+Status requests have a six-second timeout. Transient network/HTTP server errors
+are retried for up to 15 seconds while existing video remains open. Recovery
+keeps the same session; a persistent outage releases media with an expiry/link
+message. A fresh preview is necessary after its deliberate shutdown; client
+retries do not restart cloud processes.
