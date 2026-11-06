@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 from avatar_head_hands import NeutralHeadCalibration, HandRetargeter
 from avatar_body_retarget import rotation_matrix
 from headless_avatar_worker import validate_pose
+from bounded_motion_test import validate_records, minimum_body_frames
 
 HAND_SHA256 = 'fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1'
 # MP point order: wrist, thumb, index, middle, ring, pinky.
@@ -60,13 +61,16 @@ def main():
         parser.add_argument('--'+name,required=True,type=Path)
     parser.add_argument('--neutral-frame',required=True,type=int,
                         help='Explicit known level/front-facing reference frame')
+    parser.add_argument('--frames',type=int,default=18)
+    parser.add_argument('--diagnostic',action='store_true',help='Allow failed body coverage; never report it as passing')
     args=parser.parse_args()
     if mp.__version__!='0.10.35' or hashlib.sha256(args.hand_model.read_bytes()).hexdigest()!=HAND_SHA256:
         raise ValueError('Unexpected hand runtime or model')
     body=json.loads(args.body_report.read_text())
     inputs=[json.loads(x) for x in args.motion_jsonl.read_text().splitlines() if x.strip()]
-    if len(inputs)!=18 or not body['passed']:
-        raise ValueError('Require the accepted 18-frame body test')
+    validate_records(inputs,args.frames)
+    if body['source_frames']!=args.frames or (not body['passed'] and not args.diagnostic):
+        raise ValueError('Require matching source timeline and passed body coverage, or explicit diagnostic mode')
     records={x['frame_id']:x for x in body['records']}
     poses={x['frame_id']:x for x in inputs}
     if args.neutral_frame not in poses:
@@ -84,10 +88,15 @@ def main():
     cap=cv2.VideoCapture(str(args.driver_video))
     with mp.tasks.vision.HandLandmarker.create_from_options(options) as detector:
         try:
-            for frame_id in range(18):
+            for frame_id in range(args.frames):
                 ok,bgr=cap.read()
                 if not ok: raise ValueError('Driving clip ended early')
                 rgb=cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
+                if frame_id not in poses:
+                    diagnostics.append({'frame_id':frame_id,'status':'body_missing',
+                        'hands':{s:{'status':'body_missing'} for s in hands}})
+                    for tracker in hands.values(): tracker.reset()
+                    continue
                 original=poses[frame_id]
                 packet=head.apply(original['pose'])
                 detail={'frame_id':frame_id,'hands':{},
@@ -124,16 +133,19 @@ def main():
         finally: cap.release()
     counts={s:sum(d['hands'][s]['status']=='tracked' for d in diagnostics) for s in hands}
     report={'scope':'offline_neutral_head_and_geometric_hands','live_verified':False,
-        'neutral_reference_frame':args.neutral_frame,'frames':len(result_records),
+        'neutral_reference_frame':args.neutral_frame,'frames':args.frames,'refined_frames':len(result_records),
+        'body_coverage_passed':body['passed'],'diagnostic_mode':args.diagnostic,
         'hand_tracked_frames':counts,'hand_model_sha256':HAND_SHA256,
-        'head_reference_degrees_before':diagnostics[args.neutral_frame]['head_before_degrees'],
-        'head_reference_degrees_after':diagnostics[args.neutral_frame]['head_after_degrees'],
-        'head_after_max_degrees':max(d['head_after_degrees'] for d in diagnostics),
+        'head_reference_degrees_before':float(np.degrees(np.linalg.norm(poses[args.neutral_frame]['pose']['body_pose'][14]))),
+        'head_reference_degrees_after':next(d['head_after_degrees'] for d in diagnostics if d['frame_id']==args.neutral_frame),
+        'head_after_max_degrees':max(d['head_after_degrees'] for d in diagnostics if 'head_after_degrees' in d),
         'finger_max_radians':{s:max(float(np.max(np.linalg.norm(r['pose'][key],axis=1)))
                                   for r in result_records)
                               for s,key in [('left','lhand_pose'),('right','rhand_pose')]},
-        'passed':len(result_records)==18 and min(counts.values())>=12
-                 and diagnostics[args.neutral_frame]['head_after_degrees']<0.01,
+        'minimum_hand_observations':int(np.ceil(2*args.frames/3)),
+        'passed':body['passed'] and len(result_records)>=minimum_body_frames(args.frames)
+                 and min(counts.values())>=int(np.ceil(2*args.frames/3))
+                 and next(d['head_after_degrees'] for d in diagnostics if d['frame_id']==args.neutral_frame)<0.01,
         'limitations':['Explicit level neutral-head calibration required',
                        'Geometric hand approximation and smoothing; not ground truth',
                        'No lip sync or facial expression tracking']}

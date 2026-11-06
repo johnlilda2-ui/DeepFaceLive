@@ -9,6 +9,7 @@ import traceback
 import numpy as np
 
 from headless_avatar_worker import HeadlessAvatarWorker, validate_pose
+from bounded_motion_test import validate_sampling, validate_records, minimum_body_frames
 
 
 def main():
@@ -20,7 +21,11 @@ def main():
     parser.add_argument('--render-height', type=int, default=420)
     parser.add_argument('--framing-box', type=float, nargs=4)
     parser.add_argument('--detail-kind', choices=('body-only','head-hands'), default='body-only')
+    parser.add_argument('--frames',type=int,default=18)
+    parser.add_argument('--fps',type=int,default=6)
+    parser.add_argument('--diagnostic',action='store_true',help='Render sparse tracking without claiming coverage passed')
     args = parser.parse_args()
+    validate_sampling(args.frames,args.fps)
     for name in ('runtime_root', 'model_dir', 'reference', 'motion_jsonl', 'driver_video'):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     output = args.output_dir.resolve(); output.mkdir(parents=True, exist_ok=True)
@@ -28,11 +33,15 @@ def main():
               'driver_kind': args.driver_kind, 'detail_kind': args.detail_kind}
     worker = None
     try:
-        if args.motion_jsonl.stat().st_size > 1024**2:
+        if args.motion_jsonl.stat().st_size > args.frames * 16 * 1024:
             raise ValueError('Bounded test motion file is too large')
         records = [json.loads(line) for line in args.motion_jsonl.read_text().splitlines() if line.strip()]
-        if not 15 <= len(records) <= 18:
-            raise ValueError('Require at least 15 valid poses from the 18-frame tracking test')
+        validate_records(records,args.frames)
+        coverage_passed = len(records) >= minimum_body_frames(args.frames)
+        if not coverage_passed and not args.diagnostic:
+            raise ValueError('Motion coverage is below the unchanged 80 percent gate')
+        report.update(expected_frames=args.frames,fps=args.fps,motion_coverage_passed=coverage_passed,
+                      diagnostic_mode=args.diagnostic)
         for r in records:
             validate_pose(r['pose'])
         from lhmpp_avatar_backend import LHMAvatarBackend
@@ -70,22 +79,27 @@ def main():
         source = []
         cap = cv2.VideoCapture(str(args.driver_video))
         try:
-            for i in range(18):
+            for i in range(args.frames):
                 ok, image = cap.read()
                 if not ok: break
                 source.append(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         finally:
             cap.release()
-        if len(source) != 18:
-            raise RuntimeError('Driving fixture did not decode 18 frames')
+        if len(source) != args.frames:
+            raise RuntimeError('Driving fixture frame count does not match the source timeline')
         by_id = {r['frame_id']: frame for r, frame in zip(records, frames)}
         timeline, held = [], []
         last = np.full_like(frames[0], 255)
-        for i in range(18):
+        for i in range(args.frames):
             if i in by_id: last = by_id[i]
             else: held.append(i)
-            timeline.append(last)
-        iio.imwrite(output / 'motion.mp4', np.stack(timeline), fps=6, codec='libx264',
+            tile = last.copy()
+            if i not in by_id:
+                flagged = Image.fromarray(tile)
+                ImageDraw.Draw(flagged).text((8,8), 'TRACKING MISSING - HELD FRAME', fill='red')
+                tile = np.asarray(flagged)
+            timeline.append(tile)
+        iio.imwrite(output / 'motion.mp4', np.stack(timeline), fps=args.fps, codec='libx264',
                     pixelformat='yuv420p', macro_block_size=2)
         h, w = frames.shape[1:3]
         edge = [r['frame_id'] for r, (l,t,rr,b) in zip(records, bounds)
@@ -120,7 +134,8 @@ def main():
                 or stats['cache_present'] or report['after_close']['close_error'] is not None
                 or stats['allocated_after_close'] > 1024**2 or edge or variation < 0.1):
             raise RuntimeError('Avatar motion, framing or cleanup screening failed')
-        report['passed'] = True
+        report['execution_passed'] = True
+        report['passed'] = coverage_passed
     except Exception:
         report['error'] = traceback.format_exc()
     finally:
