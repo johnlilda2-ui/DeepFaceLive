@@ -70,8 +70,23 @@ def main():
         print('STAGE strict_model_load', flush=True)
         from core.models.modeling_humana4o_lrm import ModelHumanA4OLRM
         config = json.loads((model_dir / 'config.json').read_text())
+        # The published inference checkpoint omits the training identity-loss net.
+        # Audited upstream only references it from train()/the training runner.
+        config['use_face_id'] = False
         model = ModelHumanA4OLRM(**config)
         weights = load_file(str(model_dir / 'model.safetensors'), device='cpu')
+        # This exact decoder inherits unused transformer blocks, but its overridden
+        # predict_rgbs() uses patchify -> chunk -> dense_predictor exclusively.
+        # Remove only this dead inference branch; strict loading still covers all
+        # active parameters. Reject a different decoder or checkpoint layout.
+        from core.models.transformer_block.dpt_decoder import PatchDPT4DecoderOnly
+        if type(model.neural_renderer) is not PatchDPT4DecoderOnly:
+            raise RuntimeError('The audited inference-only adapter requires PatchDPT4DecoderOnly')
+        prefix = 'neural_renderer.transformer_block.'
+        if any(key.startswith(prefix) for key in weights):
+            raise RuntimeError('Checkpoint contains transformer weights; do not prune them')
+        model.neural_renderer.transformer_block = torch.nn.ModuleList()
+        report['omitted_training_only_modules'] = ['id_face_net', prefix.rstrip('.')]
         model.load_state_dict(weights, strict=True)
         del weights
         gc.collect()
