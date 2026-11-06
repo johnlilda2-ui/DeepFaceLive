@@ -75,11 +75,23 @@ def main():
         run(['uv', 'pip', 'install', '--python', env_python, '--no-deps', str(candidates[0])])
     manifest = json.loads((evidence / 'asset-manifest.json').read_text())
     assets = Path('/tmp/dfl-fullbody-assets')
+    revisions = {'3DAIGC/LHMPP-700M': 'fc9f73664b9bfcc457e96210ddc06fe7caf0d559',
+                 '3DAIGC/LHMPP-Prior': 'b683c8f68bede4f318b0bb539730b8e6711d30a0'}
+    def file_sha256(path):
+        digest = hashlib.sha256()
+        with path.open('rb') as stream:
+            for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+                digest.update(block)
+        return digest.hexdigest()
     def download(item):
+        if revisions.get(item['repo']) != item['revision']:
+            raise RuntimeError('Unexpected asset repository/revision')
         folder = 'model' if item['repo'] == '3DAIGC/LHMPP-700M' else 'prior'
         target = assets / folder / item['path']
+        if not target.resolve().is_relative_to((assets / folder).resolve()):
+            raise RuntimeError('Asset path must stay inside experimental storage')
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == item['sha256']:
+        if target.exists() and file_sha256(target) == item['sha256']:
             return
         url = f"https://huggingface.co/{item['repo']}/resolve/{item['revision']}/{item['path']}"
         part = target.with_suffix(target.suffix + '.part')
@@ -97,6 +109,13 @@ def main():
         print('RESTORED_ASSET', item['path'], flush=True)
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(download, manifest))
+    prior_link = root / 'pretrained_models'
+    if not os.path.lexists(prior_link):
+        prior_link.symlink_to(assets / 'prior', target_is_directory=True)
+    if prior_link.resolve() != (assets / 'prior').resolve():
+        raise RuntimeError('Existing experimental prior path points elsewhere; left intact')
+    if not (prior_link / 'human_model_files/pose_estimate/multiHMR_896_L.pt').is_file():
+        raise RuntimeError('Restored pose asset is not accessible from the runtime')
     motion = Path('/tmp/dfl-fullbody-motion')
     if not (motion / 'motion_video/BasketBall_I/smplx_params').exists():
         url = 'https://huggingface.co/3DAIGC/LHMPP-Assets/resolve/c50158bda6b0f2fafec0d81ecdfaaf0430c44d60/motion_video.tar'
