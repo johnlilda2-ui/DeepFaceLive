@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "provenance": "Aggregate transcription of observed Kaggle execution; excludes source images and per-frame biometric landmarks/poses.",
+  "date": "2026-11-06",
+  "scope": "opt-in neutral-head calibration, geometric hand tracking and tighter native camera",
+  "semantic_source": "4e2c4e316eed5897205e08e7fba03f2dc136f8f0",
+  "live_verified": false,
+  "tracker": {
+    "python": "3.11.16",
+    "mediapipe": "0.10.35",
+    "delegate": "CPU",
+    "frames": 18,
+    "explicit_neutral_frame": 0,
+    "observed_hand_frames": {
+      "left": 14,
+      "right": 13
+    },
+    "missing_or_rejected_hand_frames": {
+      "left": 4,
+      "right": 5
+    },
+    "fallback": "Immediate original body wrist and neutral finger rotations; smoothing state reset on missing/rejected detection.",
+    "head_reference_local_rotation_magnitude_degrees_before": 41.94925826511024,
+    "head_reference_local_rotation_magnitude_degrees_after": 0,
+    "maximum_calibrated_head_local_rotation_magnitude_degrees": 11.621646028193924,
+    "maximum_finger_joint_rotation_radians": {
+      "left": 1.3153213554381964,
+      "right": 1.2622998649932617
+    },
+    "coverage_gate_minimum_per_hand": 12,
+    "passed": true
+  },
+  "gpu": {
+    "name": "Tesla T4",
+    "rendered_frames": 18,
+    "cuda_compute_events": 17010,
+    "model_loads": 1,
+    "avatar_reconstructions": 1,
+    "setup_seconds": 58.86477390999994,
+    "profiled_render_seconds": 12.972002215999964,
+    "native_output_shape": [
+      630,
+      518,
+      3
+    ],
+    "framing_box": [
+      430,
+      130,
+      1030,
+      864
+    ],
+    "foreground_border_contacts": 0,
+    "first_last_frame_mae": 5.561798533227105,
+    "close_error": null,
+    "cache_present_after_close": false,
+    "model_released": true,
+    "allocated_after_close_bytes": 6144,
+    "reserved_after_close_bytes": 4194304,
+    "passed": true
+  },
+  "post_fix_limb_consistency": {
+    "independent_ground_truth": false,
+    "matched_frames": 18,
+    "bone_samples": 144,
+    "mean_degrees": 4.215299683271659,
+    "p90_degrees": 7.5544371442201,
+    "limits": {
+      "minimum_frames": 12,
+      "minimum_bones": 80,
+      "maximum_mean": 35,
+      "maximum_p90": 60
+    },
+    "passed": true
+  },
+  "output": {
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "width": 518,
+    "height": 630,
+    "frames": 18,
+    "duration_seconds": 3,
+    "size_bytes": 51168,
+    "sha256": "098fb80f32a66210383dbc6b64ba2ed827fb6e3f0f806eae95a0b180398ef599"
+  },
+  "verification": {
+    "geometry_regression_tests": 15,
+    "manual_before_after_frame": 9,
+    "python_compile_passed": true,
+    "downloaded_output_ffprobe_passed": true,
+    "restored_runtime_completed_with_empty_prior_backup": true
+  },
+  "limitations": [
+    "Neutral reference must be known level/front-facing; arbitrary first-frame calibration can be wrong",
+    "Short front-facing input only; no validated nod/turn sequence, head occlusion or independent head-angle ground truth",
+    "Hands observed in 14/18 and 13/18 frames; neutral fallback can visibly pop during misses",
+    "Geometric finger directions, wrist twist and reconstructed hand appearance are approximate",
+    "Neutral jaw/eyes/expressions; no lip synchronization or live streaming/OBS validation",
+    "Profiled render time is not end-to-end live throughput; fixed tight camera may clip wider motion"
+  ]
+}
