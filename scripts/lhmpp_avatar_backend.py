@@ -69,8 +69,8 @@ class LHMAvatarBackend:
             config = json.loads((model_dir / 'config.json').read_text())
             # Published inference weights omit the training-only identity loss net.
             config['use_face_id'] = False
-            # Some dependency imports retain this constructor frame. Avoid a
-            # second local model reference that would survive self.model cleanup.
+            # Constructor-frame retention was observed in GPU lifecycle tests.
+            # Keep the only model reference on self so close() can clear it.
             self.model = ModelHumanA4OLRM(**config)
             weights = load_file(str(model_dir / 'model.safetensors'), device='cpu')
             prefix = 'neural_renderer.transformer_block.'

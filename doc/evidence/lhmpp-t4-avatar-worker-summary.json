@@ -1,0 +1,140 @@
+{
+  "date": "2026-11-06",
+  "scope": "Offline cached full-body avatar worker",
+  "provenance": "Transcribed from executed Kaggle worker-report.json and diagnostic logs; raw evidence remains in the Kaggle output directories.",
+  "tested_commit": "56b1815892050c00891515555f803af0710e8c2d",
+  "gpu": "Tesla T4",
+  "reference": "Official fictional AI reference 055330c0d988_000.jpg",
+  "upstream_commit": "906b5d9fb967ab42efb92f6fa55bf22cac86b653",
+  "output_directory": "/kaggle/working/dfl-fullbody-evidence/avatar-worker-clean-20261106-095545",
+  "passed": true,
+  "live_verified": false,
+  "optimized_decoder": true,
+  "model_loads": 1,
+  "avatar_reconstructions": 1,
+  "render_calls": 91,
+  "render_cuda_compute_kernel_events": 17010,
+  "setup_seconds": 42.20053400500001,
+  "benchmark": {
+    "warmup_sequences": 1,
+    "repeats": 3,
+    "frames_per_repeat": 18,
+    "repeat_fps": [
+      7.364088200991837,
+      7.385223372561958,
+      7.3839072928975975
+    ],
+    "sequence_seconds": [
+      2.444294461000027,
+      2.437299332999828,
+      2.437733748000028
+    ],
+    "median_fps": 7.3839072928975975,
+    "repeat_mae_from_verified_sequence": [
+      0,
+      0,
+      0
+    ],
+    "peak_allocated_bytes": 5051083264,
+    "peak_reserved_bytes": 5112856576,
+    "includes": [
+      "motion validation",
+      "camera preparation",
+      "CPU processing",
+      "GPU rendering",
+      "readback"
+    ],
+    "excludes": [
+      "setup and avatar reconstruction",
+      "network",
+      "video encoding",
+      "webcam tracking"
+    ]
+  },
+  "baseline_comparison": {
+    "baseline": "decoder-precision-20261106-091159/fp16-channels-last",
+    "frames": 18,
+    "full_mae": 0.001776023767888546,
+    "subject_mae": 0.01204092800617218,
+    "subject_p99": 1,
+    "subject_large_error_fraction": 0,
+    "minimum_frame_iou": 0.999945021716422,
+    "maximum_frame_subject_mae": 0.012688472867012024,
+    "maximum_channel_error": 1,
+    "quality_gate_passed": true,
+    "mask_method": "union of thresholded nonwhite pixels, not semantic segmentation"
+  },
+  "motion_change_first_last_mae": 19.501338740624455,
+  "validation": {
+    "stale_frame_rejected": true,
+    "invalid_frame_rejected": true,
+    "rejected_packets_did_not_call_backend": true,
+    "incoming_shape_override_mae": 0,
+    "render_after_close_rejected": true,
+    "strict_weights_loaded": true,
+    "finite_decoder_outputs_checked": true,
+    "unit_tests_passed": 7,
+    "syntax_checks_passed": true,
+    "concurrent_render_and_shutdown_tested": "CPU test double; concurrent GPU rendering is rejected"
+  },
+  "codec": {
+    "codec": "h264",
+    "width": 364,
+    "height": 420,
+    "fps": "6/1",
+    "duration_seconds": 3,
+    "decoded_frames": 18
+  },
+  "cleanup": {
+    "closed": true,
+    "cache_present": false,
+    "model_python_released": true,
+    "close_error": null,
+    "cublas_workspace_cleared": true,
+    "allocated_before_load": 0,
+    "allocated_after_gc": 8525824,
+    "allocated_after_close": 6144,
+    "reserved_after_close": 4194304,
+    "acceptance_limit_bytes_above_start": 1048576
+  },
+  "visual_review": {
+    "completed": true,
+    "poses": [
+      1,
+      6,
+      18
+    ],
+    "finding": "No visible structural or clothing regression against the probe; existing face/hand/limb detail remains coarse"
+  },
+  "audit_fixes": [
+    "Reject huge timestamps before floating-point conversion",
+    "Avoid signed integer absolute-value overflow during input validation",
+    "Resolve CLI paths before the upstream runtime changes process working directory",
+    "Remove local model alias retained by the backend constructor frame",
+    "Clear the pinned cuBLAS workspace after model release"
+  ],
+  "preserved_failed_runs": [
+    {
+      "commit": "e6801bbf299b5fdc05c8b06faa349aec353d57fa",
+      "directory": "avatar-worker-20261106-093928",
+      "reason": "Close retained 4550097920 allocated CUDA bytes"
+    },
+    {
+      "commit": "d920014be38e865022d5829be6e8d420fdf0f44c",
+      "directory": "avatar-worker-retry-20261106-094401",
+      "reason": "Compiler-cache reset did not release retained model; diagnostic identified constructor frame"
+    },
+    {
+      "commit": "544bf483f4f4461303689501fe5d39930e4aa0a1",
+      "directory": "avatar-worker-final-20261106-095157",
+      "reason": "Model released, but cuBLAS workspace left 8525824 allocated bytes"
+    }
+  ],
+  "limitations": [
+    "One avatar and 18 prerecorded motion poses",
+    "Seven lifecycle tests use a CPU backend double; the actual GPU run verifies normal rendering and normal close, not injected GPU OOM",
+    "Multiple simultaneous GPU avatars and long-session stability unverified",
+    "No webcam retargeting, public service, avatar WebRTC transport, synchronized lips or OBS test"
+  ],
+  "next_gate": "Evaluate public body-pose tracking and SMPL-X retargeting, then connect bounded motion packets to this separate worker."
+}

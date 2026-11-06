@@ -307,3 +307,90 @@ Use the existing bounded probe command and identical calibrated camera arguments
 The optimized mode is available explicitly for further experiments; default inference is unchanged. Next build a separate cached-avatar worker accepting motion frames, then evaluate public body-pose tracking and retargeting. The 7.4 FPS result is sufficient to proceed with a prototype integration gate, not a claim of smooth production live video. Live webcam control, synchronized lips, avatar WebRTC streaming, long-session stability and OBS output remain pending.
 
 All changes are confined to experimental scripts, tests and evidence on the existing branch. Master, the desktop app and the working face worker are unchanged. No paid GPU service was started.
+
+
+## Separate cached-avatar worker — 2026-11-06
+
+**Verified on Kaggle's free T4:** 91 rendered frames, one model load, one avatar reconstruction, **7.384 FPS** median cached throughput. The worker's 18-frame output passed the existing probe comparison, with maximum channel difference 1/255. Its model and avatar cache were released on close. This is a Python worker interface using prerecorded motion, not live webcam control.
+
+### Worker contract
+
+`scripts/headless_avatar_worker.py` owns one immutable avatar backend. Preparation happens once. `render(frame_id, timestamp_ms, pose)` accepts a validated one-frame SMPL-X motion dictionary and returns an independent uint8 RGB image. Frame IDs and timestamps must increase; invalid or stale frames do not reach the GPU or consume the next ID. Concurrent rendering is rejected rather than queued.
+
+Incoming `betas` are ignored: the reference image supplies the avatar's shape. Motion carries root/body/hand/eye/jaw pose, expression, translation and camera intrinsics. Missing optional facial/hand fields default to neutral values. Camera-size changes require a new worker. The current packets contain prepared SMPL-X rotations and expression coefficients; raw webcam landmarks still need a separate retargeter.
+
+Each backend belongs to only one worker. A render error closes the worker and propagates the error. Close waits for an active render to finish, clears state and is idempotent. Snapshot exposes counters and cleanup status, not cached tensors.
+
+`scripts/lhmpp_avatar_backend.py` loads the pinned upstream model with strict weights and required CUDA placement. It estimates reference shape and reconstructs the avatar once, retaining the canonical Gaussian/features representation. Each motion frame calls animation directly using the same cached avatar. The previously verified decoder optimization remains explicit through `optimized_decoder=True`; defaults stay unchanged. Use one real backend per dedicated process because the upstream runtime uses process-wide imports and relative asset paths.
+
+Example after preparing the pinned assets and initial motion packet:
+
+```python
+from headless_avatar_worker import HeadlessAvatarWorker
+from lhmpp_avatar_backend import LHMAvatarBackend
+
+backend = LHMAvatarBackend(
+    runtime_root, model_dir, consented_reference,
+    framing_box=camera_crop, optimized_decoder=True,
+)
+worker = HeadlessAvatarWorker(backend, initial_pose)
+try:
+    rgb = worker.render(frame_id=0, timestamp_ms=0, pose=initial_pose)
+finally:
+    worker.close()
+```
+
+### Actual execution evidence
+
+| Check | Observed result |
+| --- | --- |
+| GPU | Tesla T4; strict weights loaded on CUDA |
+| Actual rendering trace | 17,010 CUDA compute-kernel events, excluding memcpy/memset |
+| Total rendered frames | 91 |
+| Model loads / avatar reconstructions | 1 / 1 |
+| Unprofiled repeat FPS | 7.364, 7.385, 7.384 |
+| Median cached FPS | 7.384 |
+| Initial model setup and avatar preparation | 42.201 seconds |
+| Repeat pixel MAE against verified sequence | 0.0 for all three repeats |
+| Baseline full-image / subject MAE, 0–255 scale | 0.001776 / 0.012041 |
+| Maximum baseline channel difference | 1 |
+| Worst frame foreground overlap | 0.999945 |
+| Incoming shape override | MAE 0.0 versus original avatar output |
+| Stale / invalid motion packets | Rejected before backend rendering |
+| Render after close | Rejected |
+| Encoded clip | H.264, 364×420, 18 decoded frames, 6/1 FPS, 3.000000 seconds |
+| Peak allocated / reserved during benchmark | 5,051,083,264 / 5,112,856,576 bytes |
+| Allocated / reserved after close | 6,144 / 4,194,304 bytes |
+| Model Python object / avatar cache after close | Released / cleared |
+
+Rendering verification is profiled separately from setup, so its CUDA events show actual frame rendering. One warmup sequence precedes three timed 18-frame repeats. Wall time includes motion validation, camera preparation, CPU processing and readback; it excludes setup, encoding, networking and webcam tracking. Playback rate is not generation rate. The repeated sequence plus the shape-override check accounts for 91 rendered frames.
+
+The baseline comparison uses the same fictional upstream reference and supplied `BasketBall_I` SMPL-X/FLAME motion as earlier tests. Foreground measurements use a thresholded nonwhite union, not semantic segmentation. Visual comparison of poses 1, 6 and 18 showed no visible body/clothing regression. Face, hands and some limb detail remain coarse.
+
+### Audit findings and fixes
+
+Seven CPU lifecycle tests passed: one-time preparation, identity separation, stale and invalid inputs, independent output buffers, backend failure, startup failure, concurrent-render rejection and close waiting for an in-flight frame. They also cover huge timestamps and signed integer bounds. These are test-double lifecycle checks; GPU failure injection and simultaneous GPU avatars were not tested. Python syntax checks passed.
+
+The first GPU run rendered correctly but failed cleanup, retaining 4,550,097,920 allocated bytes. A compiler-cache reset did not fix it. A minimal one-frame diagnostic without the profiler traced the live model reference to the backend constructor frame. Removing its extra local model alias released the model; a weak reference now confirms collection. The unsuccessful compiler-reset workaround was removed.
+
+An additional 8,525,824 bytes remained after collection. The pinned PyTorch 2.3/cu121 source defines an 8,519,680-byte T4 cuBLAS workspace independent of the model. The dedicated worker now synchronizes and clears that workspace through its pinned runtime binding before releasing allocator blocks. The final run retained only 6,144 allocated tensor bytes, passing the original unchanged limit of startup allocation plus 1 MiB. Allocator reservation and driver/context memory are separate quantities; this does not claim total device usage becomes zero.
+
+Primary implementation reference: [PyTorch 2.3 cuBLAS handle/workspace source](https://github.com/pytorch/pytorch/blob/v2.3.0/aten/src/ATen/cuda/CublasHandlePool.cpp). This cleanup is version-specific and belongs in the dedicated worker process.
+
+The audit also fixed timestamp validation before floating conversion, signed-integer bound checks, and absolute CLI path resolution before the upstream checkout changes working directory. No thresholds were relaxed to accept failed cleanup runs.
+
+### Reproduction, evidence and next gate
+
+`scripts/avatar_worker_smoke_test.py` runs a bounded 18-pose GPU sequence, benchmarks the same cached avatar, checks invalid/stale/shape-override packets, verifies the H.264 clip and asserts model/cache release. Run it in the prepared experimental environment with absolute paths:
+
+```bash
+LD_LIBRARY_PATH=/usr/local/nvidia/lib64 TORCH_HOME=/tmp/dfl-fullbody-torch-cache /tmp/dfl-fullbody-env/bin/python scripts/avatar_worker_smoke_test.py --runtime-root /kaggle/working/dfl-fullbody-runtime --model-dir /tmp/dfl-fullbody-assets/model --reference /kaggle/working/dfl-fullbody-runtime/assets/example_aigc_images/055330c0d988_000.jpg --pose-json /tmp/dfl-fullbody-motion/motion_video/BasketBall_I/smplx_params/00014.json --baseline-dir /kaggle/working/dfl-fullbody-evidence/decoder-precision-20261106-091159/fp16-channels-last --output-dir /kaggle/working/dfl-fullbody-evidence/new-avatar-worker-run --framing-box 389.0095956873315 164.90057142857142 991.7343396226415 864.0 --optimized-decoder
+```
+
+Keep the camera-framing, attention, decoder-precision and precision-quality helper modules beside the worker scripts. Tested semantic source: `56b1815892050c00891515555f803af0710e8c2d`.
+
+[Transcribed worker summary](evidence/lhmpp-t4-avatar-worker-summary.json). Raw report, rendering trace, arrays, comparison and clip are retained at `/kaggle/working/dfl-fullbody-evidence/avatar-worker-clean-20261106-095545/`. Earlier unsuccessful cleanup runs and the reference diagnostic remain in the preceding avatar-worker directories.
+
+![Verified cached-avatar worker](evidence/lhmpp-t4-avatar-worker-proof.jpg)
+
+Next evaluate public body-pose tracking and SMPL-X retargeting, then feed bounded motion packets into this worker. Live webcam behavior, lip synchronization, avatar transport, long-session stability and OBS output remain unverified. A public network service and upload/reconnection flow have not been added in this stage. The desktop application, existing face worker and master remain unchanged; no paid GPU was started.
