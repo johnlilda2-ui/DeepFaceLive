@@ -137,7 +137,7 @@ async function start(mode) {
     if (renderingMode === 'portrait') {
       $('preserveMouth').checked = false; $('preserveMouth').disabled = true;
       $('swapLabel').textContent = 'Animate portrait (turn off before starting to compare the original cloud return)';
-      $('modeNotice').textContent = 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.';
+      $('modeNotice').textContent = 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.' + (config.portraitEngine === 'lia' ? ' Native output: 256×256.' : '');
     }
     if (config.identityRevision > 0 && !$('identityPhoto').files.length)
       $('identityStatus').textContent = `Cloud is using an uploaded face photo (revision ${config.identityRevision}). Select and upload another photo to replace it.`;

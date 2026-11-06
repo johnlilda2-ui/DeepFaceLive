@@ -208,3 +208,14 @@ only the Kaggle test establishes GPU execution and identity changes.
 All 31 unit/regression tests, the CPU WebRTC integrations and the expanded
 Chromium upload, mouth-option, bypass, outage and cleanup checks passed in
 GitHub Actions run `42152931709` at commit `27be436178edc53942bf0903f3ced9b1844dfa7f`.
+
+
+## Portrait avatar stage — 6 November 2026
+
+The separate headless portrait mode now defaults to the original DeepFaceLive LIA ONNX animator. Face mode and the desktop app retain their defaults. An uploaded, consented portrait supplies the hair, head, visible shoulders and background; webcam facial motion drives the portrait. This is not full-body motion transfer, audio-driven speech, or an exact reconstruction from every angle. Native output is 256×256; shoulders remain mostly still. Begin each session facing forward with a neutral expression to calibrate motion. Stop and restart to recalibrate.
+
+Actual Kaggle Tesla T4 testing at commit ec548ec verified executed CUDA compute nodes in detector (1368), landmarks (427), and portrait generator (10134), rather than provider availability alone. Six frames from two fictional driving stills changed the output (MAE 32.99), held the previous avatar when no face was detected, and reproduced the initial output after motion reset. Warm median processing was 84.91 ms in that sample, excluding networking and camera capture. The HTTP/WebRTC test received five 256×256 avatar frames, connected successfully, and released the session on Stop. These are same-host tests; physical Windows avatar testing remains outstanding.
+
+Reproduce using notebooks/kaggle_portrait_avatar_test.ipynb. Launch the existing server with --mode portrait --portrait-engine lia and the usual authenticated server options. Add /modelhub/onnx/LIA/generator.onnx.part* to sparse checkout when reusing an existing checkout. No new Torch installation is needed. LivePortrait remains an optional, unverified engine: Kaggle canceled its heavier setup; do not claim its GPU inference passed.
+
+Portrait uploads remain in worker memory until replaced or the server stops. They are not written to disk by the upload endpoint. This differs from face mode, which retains a derived identity vector. Existing authentication, consent checkbox, idle/session expiry, upload limits, and single-session admission still apply.

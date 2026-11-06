@@ -85,6 +85,16 @@ async def main():
             response = await http.get(url+'/config')
             assert response.status == 401, 'Unauthenticated configuration was exposed'
             upload_change = mouth_change = None
+            if portrait_engine:
+                photo_headers = {**headers, "Content-Type":"image/png"}
+                response = await http.post(url+"/identity", headers=photo_headers, data=Path(args.target_image).read_bytes())
+                assert response.status == 200, await response.text()
+                other, _ = await asyncio.to_thread(worker.process_frame, target)
+                upload_change = float(np.abs(other.astype(float)-expected).mean())
+                assert upload_change > .1, "Portrait upload did not change avatar appearance"
+                response = await http.post(url+"/identity", headers=photo_headers, data=Path(args.source_image).read_bytes())
+                assert response.status == 200, await response.text()
+                expected, _ = await asyncio.to_thread(worker.process_frame, target)
             if args.exercise_upload_mouth:
                 photo_headers = {**headers, 'Content-Type':'image/png'}
                 response = await http.post(url+'/identity',headers=photo_headers,data=Path(args.target_image).read_bytes())
@@ -142,7 +152,7 @@ async def main():
                       'packets_received':packets,'output_shape':list(received.shape),
                       'original_mae':original_error,'processed_reference_mae':processed_error,
                       'session':status,'stop_released_session':True,'gpu_verified':not args.transport_only,
-                      'identity_upload_verified':args.exercise_upload_mouth,
+                      'identity_upload_verified':bool(args.exercise_upload_mouth or portrait_engine),
                       'mouth_preservation_verified':args.exercise_upload_mouth,
                       'identity_change_mae':upload_change,'mouth_change_mae':mouth_change,
                       'external_windows_tested':False}

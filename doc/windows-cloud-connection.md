@@ -156,3 +156,8 @@ converted through the repository's 68-point mapping, to exclude a feathered mout
 region from the swap. This preserves the real lips and teeth, and may retain some
 of the user's appearance. It is an optional mouth composite, not audio-driven
 lip synthesis or measured audio/video synchronization. Audio capture remains off.
+
+
+## Portrait avatar preview
+
+Use the portrait-mode preview to retain the reference photo's hair and visible upper-body appearance. Enter the existing connection key, choose a clear front-facing photo of yourself or a consenting person, confirm permission, and upload it before starting the camera. Face forward with a neutral expression at Start; then speak or move your head gently. The model follows webcam motion, not microphone audio. Native LIA output is 256×256 and the shoulders mostly stay still; full-body replacement is not implemented. Uploaded portrait pixels stay in server memory until replaced or the server stops. Use Stop before replacing the portrait or recalibrating. Temporary Kaggle previews expire; the interface shows the session countdown.

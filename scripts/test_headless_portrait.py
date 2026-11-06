@@ -1,5 +1,7 @@
 """CPU contract checks; these do not claim portrait model inference."""
 import unittest
+import json
+from pathlib import Path
 from unittest.mock import patch
 import numpy as np
 
@@ -15,6 +17,12 @@ class IdentityTransform:
 
 
 class PortraitTests(unittest.TestCase):
+    def test_portrait_notebook_code_compiles(self):
+        notebook = json.loads((Path(__file__).resolve().parents[1]/'notebooks/kaggle_portrait_avatar_test.ipynb').read_text())
+        for cell in notebook['cells']:
+            if cell['cell_type'] == 'code':
+                compile(''.join(cell['source']),cell['id'],'exec')
+
     def test_portrait_paste_changes_head_crop_and_preserves_source_outside(self):
         source = np.full((256,256,3),40,np.uint8)
         generated = np.full((128,128,3),220,np.uint8)

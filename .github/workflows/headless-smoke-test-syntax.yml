@@ -26,6 +26,7 @@ on:
       - "scripts/test_headless_worker.py"
       - "scripts/test_headless_cuda_evidence.py"
       - "notebooks/kaggle_headless_inference_smoke_test.ipynb"
+      - "notebooks/kaggle_portrait_avatar_test.ipynb"
       - ".github/workflows/headless-smoke-test-syntax.yml"
   workflow_dispatch:
 
@@ -64,6 +65,7 @@ jobs:
             scripts/test_headless_worker.py
             scripts/test_headless_cuda_evidence.py
             notebooks/kaggle_headless_inference_smoke_test.ipynb
+            notebooks/kaggle_portrait_avatar_test.ipynb
           sparse-checkout-cone-mode: false
       - name: Set up Python
         uses: actions/setup-python@v5
