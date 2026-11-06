@@ -141,7 +141,7 @@ async function start(mode) {
     }
     if (renderingMode === 'face') {
       $('preserveMouth').disabled = true; // Options stay locked while connecting.
-      $('swapLabel').textContent = 'Swap my face using the uploaded photo';
+      $('swapLabel').textContent = 'Swap face (turn off before starting to compare the original cloud return)';
       $('modeNotice').textContent = 'Live face swap: your camera scene, hair and body remain visible. The uploaded photo supplies the face identity.';
     }
     const hasTurn = config.iceServers.some(server =>
