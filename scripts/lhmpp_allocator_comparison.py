@@ -35,9 +35,8 @@ def audit(control_dir, reuse_dir, output_dir):
     if any(a.shape != expected or a.dtype != np.uint8 for a in arrays):
         raise ValueError('Unexpected raw sequence shape or dtype')
     difference = np.abs(arrays[0].astype(np.int16) - arrays[1].astype(np.int16))
-    # Cache reuse changes allocation only. Any pixel change rejects this adapter.
-    if difference.max() != 0:
-        raise ValueError('Allocator reuse changed raw pixels')
+    # Keep the exact-equality gate strict, but preserve failed experiment evidence.
+    pixels_equal = bool(difference.max() == 0)
     codec_audits = []
     for path, report in zip((control_dir, reuse_dir), reports):
         result = subprocess.run(['ffprobe', '-v', 'error', '-count_frames',
@@ -55,12 +54,15 @@ def audit(control_dir, reuse_dir, output_dir):
     a, b = [r['unprofiled_cached_benchmark']['median_fps_including_cpu_and_readback'] for r in reports]
     output_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        'scope': 'offline_cached_allocator_ablation', 'passed': True, 'live_verified': False,
+        'scope': 'offline_cached_allocator_ablation', 'passed': pixels_equal, 'live_verified': False,
+        'rejection_reasons': [] if pixels_equal else ['Exact raw-pixel equality failed'],
         'gpu': reports[0]['gpu'], 'control_directory': str(control_dir), 'reuse_directory': str(reuse_dir),
         'control_benchmark': reports[0]['unprofiled_cached_benchmark'],
         'reuse_benchmark': reports[1]['unprofiled_cached_benchmark'],
         'speedup_percent': (b / a - 1) * 100,
-        'raw_frames_equal': True, 'raw_pixel_max_error': int(difference.max()),
+        'raw_frames_equal': pixels_equal,
+        'changed_channel_values': int(np.count_nonzero(difference)),
+        'total_channel_values': int(difference.size), 'raw_pixel_max_error': int(difference.max()),
         'raw_pixel_mean_error': float(difference.mean()), 'compared_frames': 18,
         'codec_audits': codec_audits,
         'cuda_compute_kernel_events': [r['cuda_kernel_count'] for r in reports],
@@ -90,4 +92,6 @@ if __name__ == '__main__':
     parser.add_argument('--reuse-dir', required=True, type=Path)
     parser.add_argument('--output-dir', required=True, type=Path)
     args = parser.parse_args()
-    print(json.dumps(audit(args.control_dir, args.reuse_dir, args.output_dir), indent=2))
+    result = audit(args.control_dir, args.reuse_dir, args.output_dir)
+    print(json.dumps(result, indent=2))
+    raise SystemExit(0 if result['passed'] else 1)
