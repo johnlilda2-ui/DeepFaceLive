@@ -139,6 +139,16 @@ async function start(mode) {
       $('swapLabel').textContent = 'Animate portrait (turn off before starting to compare the original cloud return)';
       $('modeNotice').textContent = 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.' + (config.portraitEngine === 'lia' ? ' Native output: 256×256.' : '');
     }
+    if (renderingMode === 'face') {
+      $('preserveMouth').disabled = true; // Options stay locked while connecting.
+      $('swapLabel').textContent = 'Swap my face using the uploaded photo';
+      $('modeNotice').textContent = 'Live face swap: your camera scene, hair and body remain visible. The uploaded photo supplies the face identity.';
+    }
+    const hasTurn = config.iceServers.some(server =>
+      (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => /^turns?:/.test(url)));
+    const mediaFailure = hasTurn
+      ? 'Video connection failed. The configured TURN relay could not establish a media path. Stop and try again.'
+      : 'Video connection failed. This preview has no TURN relay, so direct connections can work once and fail on later attempts. A TURN relay is needed for networks that block the direct path.';
     if (config.identityRevision > 0 && !$('identityPhoto').files.length)
       $('identityStatus').textContent = `Cloud is using an uploaded face photo (revision ${config.identityRevision}). Select and upload another photo to replace it.`;
     if (mode === 'camera' && !navigator.mediaDevices)
@@ -158,7 +168,7 @@ async function start(mode) {
       $('connection').textContent = currentPeer.connectionState;
       if (currentPeer.connectionState === 'connected') {clearTimeout(connectionDeadline);
         message('Video connected. The right preview is returning from the cloud.');}
-      if (currentPeer.connectionState === 'failed') void stop('Media connection failed. Check STUN/TURN relay settings.');
+      if (currentPeer.connectionState === 'failed') void stop(mediaFailure);
     };
     stream.getVideoTracks().forEach(track => peer.addTrack(track, stream));
     message('Negotiating the video connection…');
