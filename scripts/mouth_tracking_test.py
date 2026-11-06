@@ -2,8 +2,10 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 
+os.environ['MPLBACKEND'] = 'Agg'
 import cv2
 import mediapipe as mp
 import numpy as np
