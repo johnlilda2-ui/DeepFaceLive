@@ -35,6 +35,7 @@ def main():
     for name in ('model', 'video', 'motion-jsonl', 'output-dir'):
         parser.add_argument('--'+name, required=True, type=Path)
     parser.add_argument('--model-sha256', required=True)
+    parser.add_argument('--lip-map', type=Path, help='Opt-in private fitted lip-expression map; never guesses coefficient indices')
     args = parser.parse_args()
     if hashlib.sha256(args.model.read_bytes()).hexdigest() != args.model_sha256:
         raise ValueError('Face model checksum mismatch')
@@ -61,6 +62,10 @@ def main():
     if not np.isfinite(fps) or fps <= 0:
         raise ValueError('Invalid source FPS')
     jaw = JawOpening()
+    lips = None
+    if args.lip_map is not None:
+        from avatar_lip_expression import LipExpressions
+        lips = LipExpressions.load(args.lip_map)
     refined, diagnostics = [], []
     with mp.tasks.vision.FaceLandmarker.create_from_options(options) as tracker:
         try:
@@ -77,6 +82,8 @@ def main():
                 scores = {c.category_name:float(c.score) for c in result.face_blendshapes[0]} if result.face_blendshapes else {}
                 score = scores.get('jawOpen')
                 pose = jaw.missing(record['pose']) if score is None else jaw.apply(record['pose'], score)
+                if lips is not None:
+                    pose = lips.apply(pose,scores,float(timestamp))
                 refined.append(dict(record, pose=validate_pose(pose)))
                 diagnostics.append(dict(frame_id=index, detected=score is not None,
                                         jaw_open_score=score, jaw_radians=pose['jaw_pose'][0]))
@@ -93,6 +100,8 @@ def main():
                   tracking_passed=len(observed) >= 144,
                   visible_motion_excitation=len(observed)>0 and max(observed)-min(observed) >= .1,
                   visual_quality_verified=False,
+                  fitted_lip_controls_enabled=lips is not None,
+                  expression_max_norm=float(max(np.linalg.norm(r['pose']['expr']) for r in refined)),
                   limitations=['jawOpen to jaw X is an approximate bounded mapping',
                                'No ARKit-to-FLAME expression basis conversion',
                                'Missing faces ease mouth toward closed; no identity matching'])
@@ -105,3 +114,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

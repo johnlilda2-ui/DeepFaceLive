@@ -157,11 +157,14 @@ class SessionManager:
                     await self.close(session['id'])
 
             try:
-                async with asyncio.timeout(25):
+                async def negotiate():
                     await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type='offer'))
                     if session['track'] is None:
                         raise ValueError('No incoming video track was offered.')
                     await pc.setLocalDescription(await pc.createAnswer())
+                # CPU tracking runs on Python 3.10; asyncio.timeout is 3.11+.
+                # wait_for also waits for cancellation before admission unlocks.
+                await asyncio.wait_for(negotiate(),timeout=25)
                 return {'id': session['id'], 'sdp': pc.localDescription.sdp,
                         'type': pc.localDescription.type}
             except BaseException:
@@ -314,7 +317,7 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
             raise
         except (ValueError, KeyError, IndexError, TypeError, AssertionError):
             raise web.HTTPBadRequest(text='Invalid video offer.')
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             raise web.HTTPGatewayTimeout(text='ICE negotiation timed out. Check STUN/TURN configuration.')
 
     async def status(request):
