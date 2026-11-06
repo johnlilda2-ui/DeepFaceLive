@@ -286,7 +286,9 @@ def main():
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    token = load_token(args.token_file)
+    token = os.environ.get('DFL_SIGNALING_TOKEN') or load_token(args.token_file)
+    if len(token) < 32:
+        raise ValueError('Connection token must contain at least 32 characters.')
     ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
     if args.diagnostic_cpu:
         class DiagnosticWorker:
@@ -304,7 +306,9 @@ def main():
         image = cv2.imread(args.source_image)
         worker.process_frame(image)  # Warm the complete CUDA path before accepting video.
     app = create_app(worker, token, ice_servers, args.allowed_origin, args.relay_only)
-    LOG.info('Connection token is in %s (not printed). Diagnostic CPU mode: %s', args.token_file, args.diagnostic_cpu)
+    LOG.info('Token source: %s (value not printed). Diagnostic CPU mode: %s',
+             'DFL_SIGNALING_TOKEN environment variable' if os.environ.get('DFL_SIGNALING_TOKEN') else args.token_file,
+             args.diagnostic_cpu)
     web.run_app(app, host=args.bind, port=args.port, access_log=None)
 
 

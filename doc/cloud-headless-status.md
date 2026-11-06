@@ -140,3 +140,14 @@ External Windows-to-Kaggle connectivity is not yet tested. Browser signaling,
 NAT/TURN traversal, local webcam capture, and OBS Virtual Camera remain future
 work. The current transport adapter is reusable for that stage; the loopback
 test does not prove reachability through Kaggle's network boundaries.
+
+
+## Browser and HTTP signaling stage
+
+The token-protected server, browser camera client, demo mode, Stop/reconnect,
+ICE diagnostics, and private TURN configuration are implemented. CPU Chromium
+integration and Kaggle GPU HTTP/WebRTC integration passed. Full evidence and the
+laptop test procedure are in [windows-cloud-connection.md](windows-cloud-connection.md).
+
+The server remains private by default. No public HTTPS route was created, and
+physical Windows webcam/OBS tests are still pending.
