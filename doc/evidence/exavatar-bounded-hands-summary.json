@@ -1,0 +1,55 @@
+{
+  "execution_passed": true,
+  "quality_verified": false,
+  "live_verified": false,
+  "gpu": "Tesla T4",
+  "torch": "2.3.0+cu121",
+  "strict_human_weights_loaded": true,
+  "frames": 3,
+  "camera": {
+    "normalized_focal": 1.7821654034703818,
+    "translation": [
+      -0.003083556890487671,
+      0.25055110454559326,
+      0
+    ],
+    "correction": "World-coordinate poses and centered view translation; upstream projection ignores principal point offsets"
+  },
+  "cases": [
+    {
+      "label": "Tracked hands",
+      "foreground_margins_px": [
+        351,
+        97,
+        344,
+        104
+      ]
+    },
+    {
+      "label": "Zero hand rotations",
+      "foreground_margins_px": [
+        350,
+        97,
+        360,
+        104
+      ]
+    },
+    {
+      "label": "Canonical body and hands",
+      "foreground_margins_px": [
+        96,
+        97,
+        96,
+        292
+      ]
+    }
+  ],
+  "framing_passed": true,
+  "visual_audit": "Hands remain curled or fused across the three cases. Zero rotations are a diagnostic, not proof of an anatomically open hand. Cause remains unisolated between pose convention, adapter and trained identity.",
+  "decision": "Stop ExAvatar experiment; retain existing LHM++ baseline without replacing its worker.",
+  "limitations": [
+    "Official author demo identity, not the generated target",
+    "Three diagnostic stills; no tracked finger accuracy or live performance established",
+    "No personal training or paid GPU service"
+  ]
+}

@@ -36,3 +36,21 @@ Reviewed frames 7, 24, 48, 90 and 150 show distorted/closed hand shapes. The ada
 The initial unused-import guard mistakenly counted both occurrences of the word flame in the import itself; it was corrected to check the rest of the module for actual additional references. Compilation passed after the correction, and the subsequent actual GPU run produced the results above.
 
 Master remains unchanged at `fc7b787bda2b8c186e142c52857458eea3a935ed`. No private source footage, per-frame pose coordinates or model weights are included in this commit.
+
+## Bounded follow-up and stopping decision
+
+A final three-still diagnostic ran successfully on the free Kaggle Tesla T4 with strictly loaded official human weights. It compared frame 24 with tracked hands, the same body pose with both hand rotation vectors zeroed, and the official canonical body pose with zeroed hands. These diagnostics do not establish that zero rotations correspond to anatomically open hands.
+
+The camera audit found two adapter problems: upstream get_proj_matrix ignores principal-point offsets, and HumanGaussian defaults to interpreting the supplied pose in camera coordinates. A view translation would be cancelled by its camera-to-world conversion. The bounded script therefore explicitly uses is_world_coord=True and centers with view translation. Rendered foreground margins, measured at 1024 square, passed a 40-pixel minimum:
+
+| Case | Left | Top | Right | Bottom |
+| --- | ---: | ---: | ---: | ---: |
+| Tracked hands | 351 | 97 | 344 | 104 |
+| Zero hand rotations | 350 | 97 | 360 | 104 |
+| Canonical body and hands | 96 | 97 | 96 | 292 |
+
+The first diagnostic attempted view translation without world-coordinate mode and correctly failed its framing gate (top margin zero); the audited correction above passed. Visual review of the corrected three-still comparison still shows curled/fused hand shapes. Framing is fixed for these three cases; hand quality is not accepted. No claim is made that the upstream model cannot reconstruct hands: this check has not isolated the pose convention, adapter and trained avatar.
+
+**Stopping decision: stop this ExAvatar experiment and retain the existing LHM++ open-hands baseline.** The LHM++ worker and desktop application remain unchanged. No personalized ExAvatar training, replacement deployment, new branch or paid service was started. Future work should continue from the existing LHM++ baseline; its hand quality, lip sync and live streaming remain unfinished.
+
+Reproduce with scripts/exavatar_bounded_hand_check.py MOTION_JSONL in the isolated Python 3.10 environment. A Kaggle restart had cleared /tmp, so the minimal torch 2.3.0/cu121, torchvision 0.18.0, pytorch3d 0.7.6, numpy 1.23.0, scipy 1.13.1, smplx 0.1.28 and chumpy 0.70 dependencies and manifest-verified SMPL-X/FLAME geometry plus static/dynamic landmark embeddings were restored. The retained compiled rasterizer and checkpoint were reused. No LHM++ environment was edited.

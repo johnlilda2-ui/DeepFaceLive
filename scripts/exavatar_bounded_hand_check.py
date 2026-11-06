@@ -64,7 +64,9 @@ def main():
                     princpt=torch.full((2,), 512., device='cuda'))
 
     with torch.inference_mode():
-        means = [human(pose, camera())[0]['mean_3d'] for _, pose in cases]
+        # Pose translations are world coordinates here. The upstream default
+        # converts camera poses back to world and would cancel view translation.
+        means = [human(pose, camera(), is_world_coord=True)[0]['mean_3d'] for _, pose in cases]
         xyz = torch.cat(means)
         center = (xyz.amin(0)+xyz.amax(0))/2
         translation = [-float(center[0]), -float(center[1]), 0.]
@@ -77,7 +79,7 @@ def main():
         board = Image.new('RGB', (1536, 550), 'white')
         draw = ImageDraw.Draw(board)
         for index, (label, pose) in enumerate(cases):
-            assets = human(pose, cam)[0]
+            assets = human(pose, cam, is_world_coord=True)[0]
             rgb = renderer(assets, (1024, 1024), cam)['img']
             torch.cuda.synchronize()
             assert torch.isfinite(rgb).all()
@@ -95,7 +97,7 @@ def main():
                   gpu=torch.cuda.get_device_name(0), torch=torch.__version__,
                   strict_human_weights_loaded=True, frames=len(cases),
                   camera=dict(normalized_focal=focal, translation=translation,
-                              correction='Center with view translation; upstream projection ignores principal point offsets'),
+                              correction='World-coordinate poses and centered view translation; upstream projection ignores principal point offsets'),
                   cases=evidence, framing_passed=all(min(e['foreground_margins_px']) >= 40 for e in evidence),
                   limitations=['Official demo identity; not the generated target',
                                'Canonical rotations do not verify tracked finger movement',
