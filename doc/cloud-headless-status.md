@@ -221,3 +221,12 @@ Reproduce using notebooks/kaggle_portrait_avatar_test.ipynb. Launch the existing
 Portrait uploads remain in worker memory until replaced or the server stops. They are not written to disk by the upload endpoint. This differs from face mode, which retains a derived identity vector. Existing authentication, consent checkbox, idle/session expiry, upload limits, and single-session admission still apply.
 
 The follow-up portrait upload test at 3ee9e5d also passed on Kaggle T4: authenticated upload changed the avatar (MAE 63.00), five processed frames returned by WebRTC, and Stop released the slot. Report: /kaggle/working/dfl-lia-upload-audit/run-z7jdpm91/signaling-report.json. GitHub Actions run 42159513763 passed the CPU regression, browser, and transport checks. Raw evidence and generated portraits were retained in Kaggle notebook version 7, “LIA portrait CUDA upload and WebRTC verified”. External Windows avatar testing remains pending.
+
+
+## External connection blocker — 6 November 2026
+
+The user reproduced the media failure on the restored face-mode preview. The displayed missing-TURN warning is conditional on configuration, not proof of the exact network failure. No TURN server is configured. GPU loopback tests do not establish external connection reliability. The retained latest preview log had zero completed/failed ICE events at inspection, so the failure cause cannot be diagnosed from that log alone.
+
+A no-video allocation probe of the vendor-published Metered Open Relay static-auth endpoint returned zero relay candidates on both TLS/TCP 443 and TCP 80 from Kaggle. Do not enable or claim success for that public configuration. Account-specific TURN credentials are the next prerequisite for a forced-relay test, followed by a real Windows test. No paid GPU or relay was provisioned. Keep credentials out of git and chat; supply the existing --ice-config option through a private runtime file.
+
+The follow-up browser regression initially failed because the face checkbox label changed after Start; the established label has been restored. Its new CI result must be checked separately from the earlier passing GPU tests.
