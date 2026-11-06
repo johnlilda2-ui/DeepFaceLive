@@ -48,16 +48,35 @@ async function stop(reason = 'Stopped. Camera and cloud session released.') {
   }
   buttons(false); message(reason);
 }
-function waitForIce(pc, signal) {
-  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+function waitForIce(pc, signal, requireRelay = false) {
   return new Promise((resolve, reject) => {
-    const finish = error => {clearTimeout(timer); pc.removeEventListener('icegatheringstatechange', check);
-      signal.removeEventListener('abort', abort); error ? reject(error) : resolve();};
-    const check = () => {if (pc.iceGatheringState === 'complete') finish();};
+    const errorCodes = new Set();
+    const failure = reason => new Error(reason + (errorCodes.size ? ` (ICE error codes: ${[...errorCodes].join(', ')}).` : '.'));
+    const finish = error => {
+      clearTimeout(timer);
+      pc.removeEventListener('icegatheringstatechange', check);
+      pc.removeEventListener('icecandidate', check);
+      pc.removeEventListener('icecandidateerror', onError);
+      signal.removeEventListener('abort', abort);
+      error ? reject(error) : resolve();
+    };
+    const check = () => {
+      // A usable relay can arrive before other unreachable servers finish.
+      // localDescription already contains the gathered candidate for the offer.
+      if (requireRelay && / typ relay(?: |\r?\n|$)/.test(pc.localDescription?.sdp || '')) finish();
+      else if (pc.iceGatheringState === 'complete') finish(requireRelay
+        ? failure('The browser could not obtain a TURN relay route. Check relay credentials and network access') : null);
+    };
+    const onError = event => {if (Number.isInteger(event.errorCode)) errorCodes.add(event.errorCode);};
     const abort = () => finish(new DOMException('Stopped','AbortError'));
-    const timer = setTimeout(() => finish(new Error('Could not gather connection candidates. Check relay settings.')), 18000);
-    pc.addEventListener('icegatheringstatechange', check); signal.addEventListener('abort', abort, {once:true});
-    if (signal.aborted) abort();
+    const timer = setTimeout(() => finish(failure(requireRelay
+      ? 'TURN route gathering timed out after 45 seconds. The browser could not obtain a usable relay route'
+      : 'Connection route gathering timed out after 45 seconds')), 45000);
+    pc.addEventListener('icegatheringstatechange', check);
+    pc.addEventListener('icecandidate', check);
+    pc.addEventListener('icecandidateerror', onError);
+    signal.addEventListener('abort', abort, {once:true});
+    if (signal.aborted) abort(); else check();
   });
 }
 async function demoStream(myEpoch) {
@@ -173,7 +192,8 @@ async function start(mode) {
     stream.getVideoTracks().forEach(track => peer.addTrack(track, stream));
     message('Negotiating the video connection…');
     await peer.setLocalDescription(await peer.createOffer());
-    await waitForIce(peer, controller.signal);
+    message(config.relayOnly ? 'Finding a TURN relay route (up to 45 seconds)…' : 'Finding a video route…');
+    await waitForIce(peer, controller.signal, config.relayOnly);
     if (myEpoch !== epoch) return;
     const answer = await api('/offer', {method:'POST', signal:controller.signal,
       body:JSON.stringify({type:peer.localDescription.type,sdp:peer.localDescription.sdp,id:sessionId,

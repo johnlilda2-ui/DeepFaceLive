@@ -10,6 +10,7 @@ on:
       - "scripts/test_headless_signaling.py"
       - "scripts/test_signaling_gpu_roundtrip.py"
       - "scripts/test_signaling_browser.py"
+      - "scripts/test_ice_gathering.js"
       - "scripts/webrtc_client.*"
       - "scripts/headless_cloud_worker.py"
       - "scripts/headless_portrait_worker.py"
@@ -47,6 +48,7 @@ jobs:
             scripts/test_signaling_gpu_roundtrip.py
             scripts/test_signaling_browser.py
             scripts/webrtc_client.html
+            scripts/test_ice_gathering.js
             scripts/webrtc_client.js
             scripts/webrtc_client.css
             doc/celebs/Millie_Park/Millie_Park.png
@@ -71,6 +73,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Test browser ICE gathering lifecycle
+        run: node scripts/test_ice_gathering.js
       - name: Compile smoke-test script
         run: |
           python -m py_compile scripts/headless_inference_smoke_test.py
