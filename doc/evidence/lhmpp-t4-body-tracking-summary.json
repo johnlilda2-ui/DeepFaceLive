@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "provenance": "Transcribed from observed Kaggle notebook execution; not raw report files",
+  "date_utc": "2026-11-06",
+  "scope": "offline synthetic body tracking and cached avatar replay",
+  "live_verified": false,
+  "source_commits": {
+    "tracking_and_replay": "e51cdfed03ef68461cf359a0d2e48f9e282cfa41",
+    "alignment": "fbe0470944287b5bd228f76ba2b1e5aa5460df23",
+    "posecap": "626701bd6315727e791cdc9c1353830b9492d6ee",
+    "lhmpp": "906b5d9fb967ab42efb92f6fa55bf22cac86b653"
+  },
+  "artifacts_root": "/kaggle/working/dfl-tracking-evidence/body-tracking-20261106-100855",
+  "cpu": {
+    "python": "3.11.16",
+    "mediapipe": "0.10.35",
+    "delegate": "CPU",
+    "torch_imported": false,
+    "source_frames": 18,
+    "accepted_frames": 18,
+    "blank_frames": 3,
+    "blank_packets": 0,
+    "median_tracking_and_retarget_ms": 24.14536000105727,
+    "p95_tracking_and_retarget_ms": 26.478843000586494,
+    "passed": true
+  },
+  "gpu": {
+    "name": "Tesla T4",
+    "rendered_frames": 18,
+    "held_frames": [],
+    "cuda_compute_events": 17010,
+    "setup_seconds": 42.99362966599983,
+    "profiled_render_seconds": 12.430224970999916,
+    "output_shape": [
+      420,
+      742,
+      3
+    ],
+    "model_loads": 1,
+    "avatar_reconstructions": 1,
+    "render_calls": 18,
+    "edge_contact_frames": [],
+    "first_last_frame_mae": 5.696674581782398,
+    "close_error": null,
+    "cache_present_after_close": false,
+    "model_released": true,
+    "allocated_after_close": 6144,
+    "reserved_after_close": 4194304,
+    "passed": true
+  },
+  "alignment": {
+    "independent_ground_truth": false,
+    "matched_frames": 18,
+    "bone_samples": 144,
+    "mean_degrees": 7.279110311228054,
+    "p90_degrees": 13.938331348717307,
+    "limits": {
+      "minimum_matched_frames": 12,
+      "minimum_bone_samples": 80,
+      "maximum_mean_degrees": 35,
+      "maximum_p90_degrees": 60
+    },
+    "passed": true
+  },
+  "video": {
+    "codec": "h264",
+    "pixel_format": "yuv420p",
+    "width": 742,
+    "height": 420,
+    "frames": 18
+  },
+  "sha256": {
+    "cpu-tracking-retry/tracking-report.json": "0aae1e71b7f6f7475e22e7454041c3375cb7ea061aada246c5b2b8dce6b8457a",
+    "cpu-tracking-retry/motion.jsonl": "cf9c9b34d9b653537d1ffed74f634877f513fcfadbc38a6e44253660eb1588cf",
+    "gpu-replay/replay-report.json": "bf21a297777227536bd0a0b98059ebdc094dfd9a12afe2a6e93427547250e2a7",
+    "gpu-replay/motion.mp4": "7ad05b961a4284208a657fc51b2264aa1aef6afe9fac3b1f225d67462a01be4c",
+    "alignment/alignment-report.json": "94588a31b40b8a63faf4d03c68962688756596b0ea1a429ad8d35fda84c7c96a",
+    "alignment/alignment-comparison.png": "de2ee4a4593e32ac4cd77192d2c7d75dbd42e2da5996cbe158a22a912fb62c6f"
+  },
+  "limitations": [
+    "18-frame synthetic driving clip, same fictional avatar; human webcam not tested",
+    "Same pose estimator reused for alignment; not independent ground truth",
+    "Pelvis locked; no root translation",
+    "Approximate twist; neutral fingers, jaw, eyes, expression",
+    "CPU timing measured on Kaggle, not Windows laptop",
+    "Profiled wide-camera render time is not live FPS",
+    "No streaming, lip sync, audio, OBS or long-session claim"
+  ],
+  "next_gate": "Consenting human driving clip before live webcam transport"
+}

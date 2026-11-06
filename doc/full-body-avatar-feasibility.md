@@ -394,3 +394,53 @@ Keep the camera-framing, attention, decoder-precision and precision-quality help
 ![Verified cached-avatar worker](evidence/lhmpp-t4-avatar-worker-proof.jpg)
 
 Next evaluate public body-pose tracking and SMPL-X retargeting, then feed bounded motion packets into this worker. Live webcam behavior, lip synchronization, avatar transport, long-session stability and OBS output remain unverified. A public network service and upload/reconnection flow have not been added in this stage. The desktop application, existing face worker and master remain unchanged; no paid GPU was started.
+
+## CPU body tracking and tracked-avatar replay — 6 November 2026
+
+This stage connects an isolated CPU pose tracker to the existing cached GPU avatar worker. It is an **offline synthetic proof**, not a human webcam or live streaming demonstration.
+
+### Selected approach and geometry audit
+
+[MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/python) supplies 33 image/world landmarks. The official Lite model is checksum-verified. The tracker explicitly selects CPU and runs in a separate Python 3.11 environment, leaving the prepared Torch/CUDA renderer environment unchanged. The measured Linux freeze and [model manifest](evidence/mediapipe-pose-lite-v1.json) are committed beside this record. Windows compatibility and laptop timing remain untested.
+
+The standalone retargeter adapts Apache-2.0 [PoseCap](https://github.com/CorridorTech/PoseCap/tree/626701bd6315727e791cdc9c1353830b9492d6ee) anatomical-frame math, with attribution and license under `third_party/posecap`. It does not use PoseCap's application/Blender integration or PEAR. World coordinates become x-left/y-up/z-forward with [x,-y,-z]; root rotation is **matrix-composed** with the renderer's pi-X camera alignment. Joint identities are not swapped.
+
+The audit corrected unstable vertical arm poles, leg frames that failed sideways kicks, and foot orientation. Eight CPU geometry tests pass: neutral body/camera alignment, composition rather than axis-angle addition, vertical arm continuity, right arm mapping, sideways leg direction, confidence/nonfinite rejection, template copying/untracked neutrality, and degenerate frame rejection. All stage Python sources compile.
+
+The output contains 21 SMPL-X body rotations. Camera and translation are fixed from the validated template; the worker retains the target's shape. Fingers, jaw, eyes and expressions remain neutral. Axial limb twist from joint centres is approximate. Body/head rotation is not lip synchronization.
+
+### Actual Kaggle results
+
+The input was our previously generated fictional avatar clip: 18 frames at 6 FPS, not a human webcam recording. The CPU tracker accepted **18/18** frames (minimum required confidence per frame ranged approximately 0.820–0.894). All three blank-frame probes returned no person and emitted no pose packet. Warm tracking plus retargeting median was **24.145 ms**, p95 **26.479 ms**, on Kaggle. CPU delegate/XNNPACK was observed; Torch was not imported.
+
+An initial tracker process failed because Kaggle inherited an inline Matplotlib backend unavailable in the isolated environment. The correction sets `MPLBACKEND=Agg` before importing MediaPipe. The corrected process exited zero. MediaPipe emitted a nonfatal NORM_RECT/IMAGE_DIMENSIONS warning; successful detection alone is not evidence of precise geometry.
+
+The existing T4 worker rendered **18/18** tracked poses, with no held frames. The profiler observed **17,010 CUDA compute events**. One model load and one avatar reconstruction served all frames. Output was H.264/yuv420p, **742×420, 18 frames**, verified with ffprobe. All foreground bounds stayed inside the image, and first/last raw frame mean absolute difference was **5.697**, ruling out a static output in this test.
+
+Setup took 42.994 s and **profiled** rendering took 12.430 s. This run deliberately uses the uncropped wide camera. Neither number is an end-to-end live FPS benchmark or comparable to the earlier unprofiled cropped-camera benchmark.
+
+After close, cache was absent, Python model release was true, and close_error was null. CUDA allocated memory was **6,144 bytes**, reserved **4 MiB**, after the existing pinned-runtime workspace cleanup.
+
+### Motion consistency and visual review
+
+The alignment checker re-detects the rendered figure and compares upper/lower arm and thigh/shin directions in pixel space. Different image dimensions are accounted for before angle calculation. Gates were declared before reading the result: at least 12 matched frames/80 bone samples, mean angle <=35 degrees and p90 <=60 degrees.
+
+Actual result: **18 matched frames / 144 bone samples**, mean **7.279 degrees**, p90 **13.938 degrees**; passed. This reuses the same estimator on both sides, so it is a detector-consistency screen, **not independent ground-truth accuracy**. Manual review of frames 1, 10 and 18 showed corresponding arm/leg directions without an obvious left/right flip. Head appearance/orientation and fine motion are not established by this limb metric.
+
+![Three tracked-pose comparisons in Kaggle](evidence/lhmpp-t4-body-tracking-proof.jpg)
+
+### Evidence, reproduction and next gate
+
+[Transcribed execution summary](evidence/lhmpp-t4-body-tracking-summary.json), with source pins, checksums and limitations. This is a transcription of observed notebook output; original reports and video remain at:
+
+`/kaggle/working/dfl-tracking-evidence/body-tracking-20261106-100855/`
+
+Tracking/replay semantic source: `e51cdfed03ef68461cf359a0d2e48f9e282cfa41`; alignment source: `fbe0470944287b5bd228f76ba2b1e5aa5460df23`. Use these scripts with `--help` for required absolute asset paths:
+- `scripts/body_tracking_smoke_test.py`: CPU model + driving clip + validated pose template -> JSONL/report, including blank probes.
+- `scripts/body_tracking_avatar_replay.py`: JSONL + same clip + prepared LHM++ assets -> GPU trace, clip, frames/report.
+- `scripts/body_tracking_alignment_check.py`: model + JSONL + source/rendered clips -> fixed-gate consistency report and overlay.
+- `scripts/test_avatar_body_retarget.py`: independent geometry regression tests.
+
+The committed freeze is the measured Linux CPU environment, not a change to the desktop app's dependencies. The GPU environment remains the previously pinned Torch 2.3.0+cu121 environment.
+
+**Next gate:** a bounded, consented real-human driving clip to measure occlusion, turns and tracking loss before adding local live webcam transport. No claim yet for lips, fingers, whole-body translation, long sessions, WebRTC avatar transport or OBS output. The desktop application, existing face worker and master are preserved. No paid GPU or relay service was started.
