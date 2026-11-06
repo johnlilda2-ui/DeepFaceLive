@@ -28,8 +28,14 @@ class DiagnosticWorker:
 
 
 async def wait_for_return(page):
+    # Chromium can defer painting offscreen video below the expanded upload controls.
+    await page.locator('#output').scroll_into_view_if_needed()
     await page.wait_for_function("""() => document.querySelector('#output').videoWidth > 0
+        && document.querySelector('#local').readyState >= 2
+        && document.querySelector('#output').readyState >= 2
         && Number(document.querySelector('#frames').textContent) >= 3""", timeout=45000)
+    await page.evaluate("""() => Promise.all(['local','output'].map(id => new Promise(resolve =>
+        document.getElementById(id).requestVideoFrameCallback(() => resolve()))))""")
     return await page.evaluate("""() => {
       const input = document.querySelector('#local'), output = document.querySelector('#output');
       function pixels(video) { const c=document.createElement('canvas'); c.width=160; c.height=120;
@@ -86,6 +92,7 @@ async def main():
                     await page.get_by_label('Preserve my real mouth and lip movements',exact=False).check()
                 await page.get_by_role('button', name=mode, exact=True).click()
                 stats = await wait_for_return(page)
+                assert app[MANAGER].session['track'].swap_enabled
                 assert stats['connection'] == 'connected', stats
                 assert stats['inversionMae'] < 20 and stats['inversionMae'] < stats['originalMae'], stats
                 assert app[MANAGER].session['track'].preserve_mouth == (mode == 'Start camera')
