@@ -60,6 +60,20 @@ def blend_rotation(previous, target, amount):
         _matrix_to_axis_angle(previous.T @ target) * amount)
 
 
+def segment_swing(source, target):
+    """Align a bone without inventing unobserved rotation around its axis."""
+    source = source / np.linalg.norm(source)
+    target = target / np.linalg.norm(target)
+    axis = np.cross(source, target)
+    sine = np.linalg.norm(axis)
+    cosine = np.clip(np.dot(source, target), -1., 1.)
+    if cosine < -0.999:
+        raise ValueError('Ambiguous reversed finger segment')
+    if sine < 1e-10:
+        return np.eye(3)
+    return rotation_matrix(axis / sine * np.arctan2(sine, cosine))
+
+
 class HandRetargeter:
     """Match palm and finger segment directions using the target rest geometry."""
     def __init__(self, rest_points, side, smoothing=0.6):
@@ -68,12 +82,6 @@ class HandRetargeter:
         self.side = side
         self.rest = points21(rest_points).copy()
         self.rest_palm = palm_frame(self.rest)
-        self.rest_frames = []
-        for chain in FINGERS:
-            self.rest_frames.append([
-                _frame_from_xy(self.rest[b]-self.rest[a], self.rest_palm[:,1],
-                               z_hint=self.rest_palm[:,2])
-                for a,b in zip(chain[:-1],chain[1:])])
         self.smoothing = smoothing
         self.previous = None
 
@@ -85,11 +93,13 @@ class HandRetargeter:
         palm = palm_frame(points)
         wrist = palm @ self.rest_palm.T
         local_hands = []
-        for chain, rest_frames in zip(FINGERS, self.rest_frames):
+        for chain in FINGERS:
             parent = wrist
-            for a,b,rest_frame in zip(chain[:-1],chain[1:],rest_frames):
-                frame = _frame_from_xy(points[b]-points[a], palm[:,1], z_hint=palm[:,2])
-                joint = frame @ rest_frame.T
+            for a,b in zip(chain[:-1],chain[1:]):
+                # A segment observes direction, not axial twist. Projecting the
+                # palm width onto curled segments can flip its frame by pi.
+                joint = segment_swing(parent @ (self.rest[b]-self.rest[a]),
+                                      points[b]-points[a]) @ parent
                 local_hands.append(parent.T @ joint)
                 parent = joint
         matrices = [wrist] + local_hands
@@ -98,6 +108,22 @@ class HandRetargeter:
                         for p,n in zip(self.previous, matrices)]
         # Commit temporal state only after all geometry has passed validation.
         self.previous = [m.copy() for m in matrices]
+        return self._write(packet, matrices)
+
+    def relax(self, packet, amount=0.35):
+        """Ease missing observations toward neutral instead of snapping."""
+        if not 0 < amount <= 1:
+            raise ValueError('Invalid relaxation amount')
+        if self.previous is None:
+            return copy.deepcopy(packet)
+        body = body_global_rotations(packet)
+        targets = [body[20 if self.side == 'left' else 21]] + [np.eye(3)] * 15
+        matrices = [blend_rotation(p, n, amount)
+                    for p,n in zip(self.previous, targets)]
+        self.previous = [m.copy() for m in matrices]
+        return self._write(packet, matrices)
+
+    def _write(self, packet, matrices):
         result = copy.deepcopy(packet)
         body = body_global_rotations(packet)
         elbow_joint, wrist_body = (18,19) if self.side == 'left' else (19,20)

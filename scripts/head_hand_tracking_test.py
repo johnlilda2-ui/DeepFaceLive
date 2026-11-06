@@ -122,7 +122,8 @@ def main():
                     except ValueError as error:
                         status={'status':'rejected','reason':str(error)}
                     if status['status']!='tracked':
-                        hands[side].reset()
+                        packet=hands[side].relax(packet)
+                        status['fallback']='ease_to_neutral'
                     detail['hands'][side]=status
                 packet=validate_pose(packet)
                 new=dict(original); new['pose']=packet

@@ -19,6 +19,42 @@ def rest_hand(side):
 
 
 class HeadHandTests(unittest.TestCase):
+    def test_curl_crossing_palm_width_does_not_flip_axial_twist(self):
+        for side in ('left','right'):
+            rest=rest_hand(side); p=template(); p['root_pose']=[np.pi,0,0]
+            previous=None
+            for degrees in (80,85,89,90,91,95,100):
+                moved=rest.copy(); turn=rotation_matrix([0,np.radians(degrees),0])
+                for a,b in ((5,6),(6,7),(7,8)):
+                    moved[b]=moved[a]+turn @ (rest[b]-rest[a])
+                result=HandRetargeter(rest,side,1).apply(p,moved)
+                hand=result['lhand_pose' if side=='left' else 'rhand_pose']
+                np.testing.assert_allclose(rotation_matrix(hand[0]),turn,atol=1e-7)
+                np.testing.assert_allclose(hand[1:3],0,atol=1e-7)
+                if previous is not None:
+                    self.assertLess(np.linalg.norm(np.array(hand[0])-previous),.09)
+                previous=np.array(hand[0])
+
+    def test_missing_hand_relaxes_without_immediate_snap_or_input_mutation(self):
+        rest=rest_hand('left'); p=template(); p['root_pose']=[np.pi,0,0]
+        moved=rest.copy(); turn=rotation_matrix([0,.8,0])
+        for a,b in ((5,6),(6,7),(7,8)):
+            moved[b]=moved[a]+turn @ (rest[b]-rest[a])
+        retarget=HandRetargeter(rest,'left',1); retarget.apply(p,moved)
+        first=retarget.relax(p); second=retarget.relax(p)
+        a=np.linalg.norm(first['lhand_pose'][0]); b=np.linalg.norm(second['lhand_pose'][0])
+        self.assertTrue(0 < b < a < .8)
+        np.testing.assert_allclose(p['lhand_pose'],0)
+        retarget.reset(); self.assertEqual(retarget.relax(p),p)
+
+    def test_reversed_bone_rejected_without_corrupting_state(self):
+        rest=rest_hand('left'); p=template(); p['root_pose']=[np.pi,0,0]
+        r=HandRetargeter(rest,'left',1); r.apply(p,rest)
+        old=copy.deepcopy(r.previous); moved=rest.copy()
+        moved[6]=moved[5]-(rest[6]-rest[5])
+        with self.assertRaises(ValueError): r.apply(p,moved)
+        for a,b in zip(old,r.previous): np.testing.assert_array_equal(a,b)
+
     def test_neutral_calibration_removes_feature_frame_pitch_bias(self):
         p = template()
         p['body_pose'][14] = [.7,0,0]
