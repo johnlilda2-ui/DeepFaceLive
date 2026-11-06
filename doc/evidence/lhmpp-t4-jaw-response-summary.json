@@ -1,0 +1,71 @@
+{
+  "scope": "lhmpp_opt_in_jaw_opening_stage",
+  "tracking": {
+    "frames": 180,
+    "tracked_frames": 172,
+    "coverage": 0.9555555555555556,
+    "mediapipe": "0.10.35",
+    "model_sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+    "jaw_score_range": [
+      0.000008357652404811233,
+      0.03304159268736839
+    ],
+    "jaw_radians_range": [
+      1.8263896620963283e-7,
+      0.00885750496861769
+    ],
+    "tracking_passed": true,
+    "visible_motion_excitation": false,
+    "initial_full_frame_tracked": 0
+  },
+  "render": {
+    "gpu": "Tesla T4",
+    "execution_passed": true,
+    "strict_weights_loaded": true,
+    "source_frame_id": 99,
+    "output_shape": [
+      630,
+      518,
+      3
+    ],
+    "cuda_compute_events": 945,
+    "seconds_including_setup": 70.69420710700024,
+    "trials": [
+      [
+        "Neutral",
+        0
+      ],
+      [
+        "Tracked maximum",
+        0.008857505396008492
+      ],
+      [
+        "Controlled",
+        0.4
+      ]
+    ],
+    "changed_pixels": [
+      242,
+      2652
+    ],
+    "mae": [
+      0.005056076484647914,
+      0.07899838614124328
+    ],
+    "allocated_after_close": 6144,
+    "reserved_after_close": 4194304,
+    "process_exit_code": 0,
+    "external_gpu_memory_after_exit_mib": [
+      0,
+      0
+    ]
+  },
+  "visual_audit": "Controlled opening visibly changes the mouth; coarse face/lip appearance remains. Tracked maximum is visually nearly neutral. This is jaw response only, not speech lip-shape or sync acceptance.",
+  "quality_verified": false,
+  "audio_lip_sync_verified": false,
+  "live_verified": false,
+  "baseline_changed": false,
+  "paid_gpu_started": false,
+  "validation": "Two CPU regression tests passed; actual 180-frame CPU face tracking and three-still T4 render completed.",
+  "next": "Obtain a speaking/open-close-mouth clip; validate measured mouth and head movement before full replay or live streaming"
+}
