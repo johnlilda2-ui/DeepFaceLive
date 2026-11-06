@@ -74,6 +74,69 @@ Kaggle diagnostics dependencies, false GPU positives, and no-face/error handling
 Desktop session construction remains unchanged; profiling is scoped to the
 standalone test/worker process.
 
-Next: a separate WebRTC transport stage, followed by local webcam and OBS
-integration. Use only consent-based inputs. No RunPod or other paid GPU was
+The WebRTC transport stage below is now verified. Next: external Windows
+connection, signaling and NAT traversal, then webcam and OBS integration. Use only consent-based inputs. No RunPod or other paid GPU was
 started, and paid hosting still requires user approval.
+
+
+## Verified WebRTC transport — 6 November 2026
+
+`scripts/headless_webrtc_track.py` connects an incoming WebRTC video track to
+the existing worker. Inference runs off the event loop. One pending frame is
+retained; stale frames are dropped. Source timestamps are preserved, timing
+samples are bounded, and shutdown waits for in-flight inference. Processing
+failures, including late failures during shutdown, propagate.
+
+The Kaggle test used aiortc 1.15.0 and PyAV 17.0.0. Two actual peer connections
+exchanged encoded video over RTP/DTLS, with the T4 worker processing the received
+frames and a second WebRTC leg returning them. It did not use a webcam or expose
+a public endpoint. The sample image was repeated as a timed video source.
+
+| Check | Observed result |
+| --- | --- |
+| Peers | Both connected |
+| Returned frames | 10, at 574×574 |
+| Video packets sent / received | 30 / 30 |
+| Incoming frames captured / processed | 37 / 11 at report time |
+| Stale frames dropped | 25 |
+| Pending frame queue limit | 1 |
+| Timestamp order | Strictly increasing |
+| Processing p50 / p95 | 89.82 / 138.92 ms |
+| Returned vs original pixel MAE | 11.10 |
+| Returned vs processed reference pixel MAE | 4.76 |
+
+The decoded return was closer to the processed reference than to the original,
+so a connection or unchanged echo alone could not pass. The timing numbers are
+worker processing time, not end-to-end webcam/network/OBS latency.
+
+| Model | CUDA compute events in WebRTC run |
+| --- | ---: |
+| Face detector | 2128 |
+| Landmarks | 854 |
+| Face swap | 2938 |
+| Identity recognition | 130 |
+
+Actual reports and the returned frame are in:
+
+- `/kaggle/working/dfl-webrtc-results/run-xdnrj1td/webrtc-report.json`
+- `/kaggle/working/dfl-webrtc-results/run-xdnrj1td/worker-trrjwooa/execution_evidence.json`
+- `/kaggle/working/dfl-webrtc-results/run-xdnrj1td/returned_frame.png`
+- `/kaggle/working/dfl-webrtc-test.log`
+
+Notebook Step 6 runs this test in the prepared environment. CPU CI runs
+`test_webrtc_gpu_roundtrip.py --transport-only`; its report explicitly sets
+`gpu_verified` false. The GPU run requires all four execution profiles to show
+CUDA compute events. GitHub Actions passed the CPU packet round-trip and all
+17 unit/regression tests at commit `0af0498ceecf348963a76f43e81226cc2a94b967`.
+Four new transport tests and both environment-repair tests also passed on Kaggle.
+
+Kaggle file persistence restored the original venv's `python` symlink as an empty
+file. `prepare_headless_env.py` now uses interpreter copies and repairs only
+interpreter aliases in a recognized venv, preserving installed packages.
+
+### Remaining connection stage
+
+External Windows-to-Kaggle connectivity is not yet tested. Browser signaling,
+NAT/TURN traversal, local webcam capture, and OBS Virtual Camera remain future
+work. The current transport adapter is reusable for that stage; the loopback
+test does not prove reachability through Kaggle's network boundaries.
