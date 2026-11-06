@@ -14,9 +14,9 @@ import tempfile
 import cv2
 import numpy as np
 from aiohttp import ClientSession, web
-from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 
-from headless_webrtc_server import create_app, MANAGER
+from headless_webrtc_server import create_app, MANAGER, validate_ice_servers
 from test_webrtc_gpu_roundtrip import SampleVideo
 
 
@@ -27,9 +27,20 @@ class DiagnosticWorker:
         pass
 
 
+def relay_only_sdp(sdp):
+    """Test helper: advertise only relay candidates; never log SDP or credentials."""
+    lines = sdp.splitlines()
+    relays = [line for line in lines if line.startswith('a=candidate:') and ' typ relay' in line]
+    if not relays:
+        raise RuntimeError('TURN returned no relay candidates; relay test cannot pass.')
+    return '\r\n'.join(line for line in lines if not line.startswith('a=candidate:') or line in relays) + '\r\n'
+
+
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--transport-only', action='store_true')
+    parser.add_argument('--ice-config', help='Private ICE JSON file; never included in reports.')
+    parser.add_argument('--force-relay', action='store_true', help='Exchange only relay candidates and verify actual video.')
     parser.add_argument('--exercise-upload-mouth', action='store_true', help='GPU identity upload and mouth-preserving return test.')
     parser.add_argument('--portrait-runtime',help='Test the separate portrait GPU worker instead of face swapping.')
     parser.add_argument('--portrait-engine',choices=['lia','liveportrait'])
@@ -37,6 +48,9 @@ async def main():
     parser.add_argument('--target-image')
     parser.add_argument('--output-dir', default='artifacts/http-signaling')
     args = parser.parse_args()
+    ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
+    if args.force_relay and not any(u.startswith(('turn:', 'turns:')) for s in ice_servers for u in s['urls']):
+        parser.error('--force-relay requires a TURN server in --ice-config')
     portrait_engine = args.portrait_engine or ('liveportrait' if args.portrait_runtime else None)
     if args.transport_only and args.exercise_upload_mouth:
         parser.error('--exercise-upload-mouth requires the GPU worker')
@@ -66,13 +80,13 @@ async def main():
     expected, _ = await asyncio.to_thread(worker.process_frame, target)
     token = secrets.token_urlsafe(32)  # Never logged or written into artifacts.
     headers = {'Authorization':'Bearer '+token}
-    app = create_app(worker, token, idle_seconds=60)
+    app = create_app(worker, token, ice_servers=ice_servers, relay_only=args.force_relay, idle_seconds=60)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '127.0.0.1', 0)
     await site.start()
     url = f'http://127.0.0.1:{site._server.sockets[0].getsockname()[1]}'
-    peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))
+    peer = RTCPeerConnection(RTCConfiguration(iceServers=[RTCIceServer(**s) for s in ice_servers]))
     source = SampleVideo(target)
     peer.addTrack(source)
     returned = asyncio.get_running_loop().create_future()
@@ -116,11 +130,13 @@ async def main():
             await peer.setLocalDescription(await peer.createOffer())
             sid = secrets.token_urlsafe(24)
             response = await http.post(url+'/offer', headers=headers, json={
-                'type':'offer','sdp':peer.localDescription.sdp,'id':sid,
+                'type':'offer','sdp':relay_only_sdp(peer.localDescription.sdp) if args.force_relay else peer.localDescription.sdp,'id':sid,
                 'preserveMouth':args.exercise_upload_mouth})
             if response.status != 200:
                 raise RuntimeError(f'Signaling failed ({response.status}): {await response.text()}')
             answer = await response.json()
+            if args.force_relay:
+                answer['sdp'] = relay_only_sdp(answer['sdp'])
             await peer.setRemoteDescription(RTCSessionDescription(sdp=answer['sdp'],type=answer['type']))
             remote = await asyncio.wait_for(returned, 15)
             timestamps = []
@@ -147,6 +163,7 @@ async def main():
             response = await http.get(url+'/session/'+sid, headers=headers)
             assert response.status == 404
             report = {'scope':'loopback HTTP signaling and WebRTC video', 'frames_received':5,
+                      'relay_only_candidate_exchange':args.force_relay,
                       'rendering_mode':'portrait' if portrait_engine else 'face',
                       'portrait_engine':portrait_engine,
                       'packets_received':packets,'output_shape':list(received.shape),
