@@ -17,12 +17,15 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--driver-kind', choices=('synthetic', 'consented-human'), default='synthetic',
                         help='Record the supplied clip provenance; this does not grant consent')
+    parser.add_argument('--render-height', type=int, default=420)
+    parser.add_argument('--framing-box', type=float, nargs=4)
+    parser.add_argument('--detail-kind', choices=('body-only','head-hands'), default='body-only')
     args = parser.parse_args()
     for name in ('runtime_root', 'model_dir', 'reference', 'motion_jsonl', 'driver_video'):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     output = args.output_dir.resolve(); output.mkdir(parents=True, exist_ok=True)
     report = {'scope': 'offline_tracked_motion_to_avatar', 'passed': False, 'live_verified': False,
-              'driver_kind': args.driver_kind}
+              'driver_kind': args.driver_kind, 'detail_kind': args.detail_kind}
     worker = None
     try:
         if args.motion_jsonl.stat().st_size > 1024**2:
@@ -39,7 +42,8 @@ def main():
         from PIL import Image, ImageDraw, ImageOps
         begin = time.monotonic()
         backend = LHMAvatarBackend(args.runtime_root, args.model_dir, args.reference,
-                                   optimized_decoder=True)
+                                   optimized_decoder=True, render_height=args.render_height,
+                                   framing_box=args.framing_box)
         worker = HeadlessAvatarWorker(backend, records[0]['pose'])
         torch.cuda.synchronize()
         report['setup_seconds'] = time.monotonic() - begin
@@ -105,7 +109,9 @@ def main():
             before_close=worker.snapshot(),
             limitations=[('Synthetic driving clip only' if args.driver_kind == 'synthetic'
                            else 'Short consented-human driving clip only'),'Pelvis-locked body motion',
-                         'Approximate limb twist; neutral fingers and facial expressions',
+                         ('Approximate limb twist; neutral fingers and facial expressions'
+                          if args.detail_kind == 'body-only' else
+                          'Explicit neutral-head calibration; approximate tracked hands; neutral facial expressions'),
                          'Profiled render time is not an end-to-end live FPS measurement'])
         worker.close()
         report['after_close'] = worker.snapshot()
