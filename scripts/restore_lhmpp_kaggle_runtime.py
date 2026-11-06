@@ -15,6 +15,26 @@ import sys
 import tarfile
 
 
+def ensure_prior_link(prior_link, target):
+    """Repair Kaggle's observed empty-file serialization without deleting entries."""
+    target = target.resolve(strict=True)
+    if not target.is_dir():
+        raise RuntimeError('Prior target must be an existing directory')
+    if os.path.lexists(prior_link):
+        if prior_link.is_symlink() and prior_link.resolve() == target:
+            return
+        if (not prior_link.is_symlink() and prior_link.is_file()
+                and prior_link.stat().st_size == 0):
+            backup = prior_link.with_name(prior_link.name + '.kaggle-empty-backup')
+            if os.path.lexists(backup):
+                raise RuntimeError('Prior placeholder backup already exists; left intact')
+            prior_link.rename(backup)
+            print('PRESERVED_KAGGLE_EMPTY_PRIOR_ENTRY', backup, flush=True)
+        else:
+            raise RuntimeError('Existing experimental prior path points elsewhere; left intact')
+    prior_link.symlink_to(target, target_is_directory=True)
+
+
 def main():
     import requests
     root = Path('/kaggle/working/dfl-fullbody-runtime')
@@ -110,10 +130,7 @@ def main():
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(download, manifest))
     prior_link = root / 'pretrained_models'
-    if not os.path.lexists(prior_link):
-        prior_link.symlink_to(assets / 'prior', target_is_directory=True)
-    if prior_link.resolve() != (assets / 'prior').resolve():
-        raise RuntimeError('Existing experimental prior path points elsewhere; left intact')
+    ensure_prior_link(prior_link, assets / 'prior')
     if not (prior_link / 'human_model_files/pose_estimate/multiHMR_896_L.pt').is_file():
         raise RuntimeError('Restored pose asset is not accessible from the runtime')
     motion = Path('/tmp/dfl-fullbody-motion')

@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "provenance": "Aggregate transcription from observed Kaggle execution; excludes source video, images, pose packets and per-frame landmarks.",
+  "date": "2026-11-06",
+  "scope": "bounded consented-human motion to fictional full-body avatar",
+  "live_verified": false,
+  "source_commits": {
+    "tracker_and_backend": "a0b62bc80070d8199ea8ab712c4a56c2fdcf7ae4",
+    "replay": "9b81d29c5c7365e258bbb80a8f903a962473590f"
+  },
+  "input": {
+    "kind": "consented-human",
+    "seconds": 3,
+    "frames": 18,
+    "fps": 6,
+    "window_start_seconds": 10,
+    "audio": false,
+    "width": 480,
+    "height": 854,
+    "private_kaggle_upload_authorized": true
+  },
+  "tracker": {
+    "passed": true,
+    "accepted_frames": 18,
+    "blank_probes": 3,
+    "blank_packets_emitted": 0,
+    "delegate": "CPU",
+    "python": "3.11.16",
+    "mediapipe": "0.10.35",
+    "torch_imported": false,
+    "minimum_required_confidence_range": [
+      0.6652324795722961,
+      0.7537855505943298
+    ],
+    "warm_median_ms": 42.70496000003732,
+    "warm_p95_ms": 60.401871599992774
+  },
+  "replay": {
+    "passed": true,
+    "gpu": "Tesla T4",
+    "frames": 18,
+    "held_frames": 0,
+    "compute_kernel_events": 17010,
+    "setup_seconds": 66.81373776399994,
+    "profiled_render_seconds": 16.476798164,
+    "model_loads": 1,
+    "avatar_reconstructions": 1,
+    "edge_contact_frames": 0,
+    "first_last_frame_mae": 1.8031585590210928,
+    "close_error": null,
+    "cache_present_after_close": false,
+    "model_released": true,
+    "allocated_after_close_bytes": 6144,
+    "reserved_after_close_bytes": 4194304
+  },
+  "alignment": {
+    "passed": true,
+    "independent_ground_truth": false,
+    "matched_frames": 18,
+    "bone_samples": 144,
+    "mean_degrees": 4.393426546104227,
+    "p90_degrees": 8.52581652766212,
+    "limits": {
+      "minimum_frames": 12,
+      "minimum_bones": 80,
+      "maximum_mean_degrees": 35,
+      "maximum_p90_degrees": 60
+    }
+  },
+  "output": {
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "width": 742,
+    "height": 420,
+    "frames": 18,
+    "seconds": 3,
+    "size_bytes": 22273,
+    "sha256": "33e73b3682006c2f90a5bbf309236a5094a3f4f7db9bc461b5e21a2f1c7ffaf4"
+  },
+  "audit": {
+    "geometry_tests_passed": 8,
+    "prior_path_tests_passed": 5,
+    "renderer_cleanup_gate_strengthened": true,
+    "prior_restore_issue": "Kaggle retained pretrained_models as an ordinary zero-byte file. Original entry preserved and expected symlink restored.",
+    "notebook_display_issue": "IPython Video(filename=...) failed in current base environment; positional file argument succeeded.",
+    "notebook_history_warning": "Read-only IPython history database warning did not affect subprocess reports or downloaded output."
+  },
+  "limitations": [
+    "Only one three-second front-facing movement window; no turns/occlusion/stress or long-session claim",
+    "Alignment reuses detector, not independent ground truth",
+    "Visible head posture and hand-detail imperfections remain",
+    "Pelvis locked; neutral fingers, jaw, eyes and facial expressions",
+    "No audio-driven lip sync, live webcam transport or OBS output",
+    "Timings measured on Kaggle; profiled render duration is not live FPS"
+  ]
+}

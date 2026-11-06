@@ -444,3 +444,36 @@ Tracking/replay semantic source: `e51cdfed03ef68461cf359a0d2e48f9e282cfa41`; ali
 The committed freeze is the measured Linux CPU environment, not a change to the desktop app's dependencies. The GPU environment remains the previously pinned Torch 2.3.0+cu121 environment.
 
 **Next gate:** a bounded, consented real-human driving clip to measure occlusion, turns and tracking loss before adding local live webcam transport. No claim yet for lips, fingers, whole-body translation, long sessions, WebRTC avatar transport or OBS output. The desktop application, existing face worker and master are preserved. No paid GPU or relay service was started.
+
+## Consented human driving clip — 6 November 2026
+
+A real recorded-motion test now passes the bounded tracking, GPU replay and limb-consistency gates. It uses the same fictional full-body target. **This is not a complete live avatar implementation.**
+
+The user explicitly approved uploading a silent three-second excerpt as a private Kaggle dataset after the upload approval check. The excerpt uses seconds 10–13 of the supplied recording, downsampled to 18 frames at 6 FPS, 480×854. The original recording, source images, per-frame landmarks and pose packets are excluded from this repository.
+
+### Execution evidence
+
+- CPU tracking: **18/18** accepted frames; **3/3** blank probes emitted no packet. Minimum required confidence ranged 0.665–0.754, above the unchanged 0.5 threshold. Warm median 42.705 ms; p95 60.402 ms on Kaggle. MediaPipe 0.10.35, Python 3.11.16, explicit CPU delegate, no Torch import.
+- T4 replay: **18/18** frames, no held frames, **17,010 CUDA compute events**. One model load and one avatar reconstruction. No foreground image-border contact.
+- Cleanup: no close error, cache absent, model released; allocated 6,144 bytes, reserved 4 MiB.
+- Alignment: **18 matched frames / 144 limb comparisons**, mean **4.393°**, p90 **8.526°**, passing the existing fixed limits. Same-detector consistency only, not independent ground truth.
+- Downloaded output independently checked with ffprobe: H.264/yuv420p, 742×420, 18 frames, three seconds, 22,273 bytes.
+- Setup 66.814 s and profiled render 16.477 s. These are not end-to-end live throughput measurements.
+
+[Aggregate test record](evidence/lhmpp-t4-human-motion-summary.json). Tracker/backend semantic source: `a0b62bc80070d8199ea8ab712c4a56c2fdcf7ae4`; actual replay source: `9b81d29c5c7365e258bbb80a8f903a962473590f`. Private source/reports remain in the existing Kaggle notebook; the result video was returned directly to the user.
+
+### Audit and repairs
+
+Replay provenance is now explicitly selected with `--driver-kind consented-human` (default remains synthetic); the flag records provenance and does not grant consent. Cleanup gates additionally reject a remaining cache or close error. The measured replay passed these strengthened checks. The original eight CPU geometry tests pass again.
+
+After the Kaggle restart, dependencies and model files were restored using the pinned experimental freeze and checksummed asset manifest. The helper reached its existing prior-path guard because Kaggle had serialized the old `pretrained_models` symlink as a **zero-byte ordinary file**. The observed entry was preserved and the verified prior target re-linked; no desktop/face runtime changed. This test reused a previously validated camera packet, so the unrelated example motion archive was not downloaded.
+
+The restore helper now handles that exact empty-file case by preserving it under `pretrained_models.kaggle-empty-backup` before creating the expected link. Nonempty files, directories and foreign links remain rejected; backup collisions are not overwritten. Five CPU filesystem regression tests pass. The human GPU run used the equivalent manual preserved-entry repair; the new helper itself is covered by these filesystem tests.
+
+The notebook's current IPython video display required a positional file argument; `Video(filename=...)` failed before displaying, while `Video(path, embed=True)` succeeded. A nonfatal read-only IPython history warning appeared after the final summary; subprocess reports and the downloaded output remained valid.
+
+### Visual findings and remaining gate
+
+Manual comparison of frames 1, 10 and 18 shows corresponding arm raises and no obvious left/right flip. The fictional target's hair, clothing and body are retained. **Head posture and hand detail visibly need improvement**; the limb metric does not validate head, finger or face accuracy. Only this short front-facing window has been evaluated. Turns, tracking loss, people crossing the frame and sustained movement remain unverified.
+
+Pelvis translation remains fixed and fingers, jaw, eyes and expressions remain neutral. No lip sync, live webcam transport or OBS output has been added by this test. The next quality gate is to correct head posture and assess turns/occlusion on consented input before exposing a live interface. No paid GPU or relay service was started, and master is unchanged.
