@@ -3,9 +3,12 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import time
+
+os.environ['MPLBACKEND'] = 'Agg'
 
 import cv2
 import mediapipe as mp
@@ -87,6 +90,8 @@ def main():
                                     'confidence': details['confidence']})
                 print('TRACK_FRAME', index, details['status'],
                       details.get('minimum_required_confidence'), flush=True)
+            if not records:
+                raise RuntimeError('Input clip has no decodable frames')
             blank_statuses = []
             for i in range(3):
                 blank = np.full_like(rgb, 255)
