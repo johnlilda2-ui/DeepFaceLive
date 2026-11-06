@@ -19,7 +19,7 @@ def main():
         overlay=ROOT/'inference-overlay';(overlay/'nets').mkdir(parents=True,exist_ok=True)
         source=(runtime/'avatar/common/nets/module.py').read_text()
         unused='from utils.flame import flame'
-        if source.count(unused)!=1 or source.count('flame')!=1:
+        if source.count(unused)!=1 or 'flame' in source.replace(unused,''):
             raise RuntimeError('The unused FLAME import needs review')
         (overlay/'nets/module.py').write_text(source.replace(unused,'# Unused training-only FLAME texture helper excluded'))
         shutil.copy2(runtime/'avatar/common/nets/layer.py',overlay/'nets/layer.py')
