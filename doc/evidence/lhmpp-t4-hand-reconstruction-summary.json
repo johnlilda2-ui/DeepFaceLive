@@ -1,0 +1,42 @@
+{
+  "scope": "hand_reconstruction_diagnostic",
+  "code_commit": "d888313b22e34e5207813c9a2f294d6d6b80fa73",
+  "input_reference": {
+    "size": [
+      504,
+      840
+    ],
+    "sha256": "23397613c73204b1045dd99f580b750c55a18202c0df491ad5f8a581736e90ab",
+    "manual_observation": "Both hands tucked into pockets; most finger surfaces are hidden"
+  },
+  "gpu": "Tesla T4",
+  "frame_ids": [
+    7,
+    24,
+    48
+  ],
+  "rendered_frames": 6,
+  "cuda_compute_events": 4671,
+  "focused_render_shape": [
+    420,
+    770,
+    3
+  ],
+  "same_cache_neural_vs_gs": true,
+  "reconstructions": 1,
+  "model_loads": 1,
+  "decoder_calls": 3,
+  "execution_passed": true,
+  "hand_quality_verified": false,
+  "model_cache_released": true,
+  "allocated_after_close": 6144,
+  "visual_observations": [
+    "Raw GS output shows some separated finger structure but speckled/poor surface appearance",
+    "Focused neural output has some additional contour detail but merged fingers remain",
+    "Existing occluded reference cannot verify hidden finger appearance"
+  ],
+  "next_requirement": "A sharp consented target reference with exposed hands and distinguishable fingers",
+  "production_default_renderer": "neural",
+  "live_verified": false,
+  "paid_services_started": false
+}
