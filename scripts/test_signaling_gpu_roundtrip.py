@@ -32,13 +32,15 @@ async def main():
     parser.add_argument('--transport-only', action='store_true')
     parser.add_argument('--exercise-upload-mouth', action='store_true', help='GPU identity upload and mouth-preserving return test.')
     parser.add_argument('--portrait-runtime',help='Test the separate portrait GPU worker instead of face swapping.')
+    parser.add_argument('--portrait-engine',choices=['lia','liveportrait'])
     parser.add_argument('--source-image')
     parser.add_argument('--target-image')
     parser.add_argument('--output-dir', default='artifacts/http-signaling')
     args = parser.parse_args()
+    portrait_engine = args.portrait_engine or ('liveportrait' if args.portrait_runtime else None)
     if args.transport_only and args.exercise_upload_mouth:
         parser.error('--exercise-upload-mouth requires the GPU worker')
-    if args.portrait_runtime and (args.transport_only or args.exercise_upload_mouth):
+    if portrait_engine and (args.transport_only or args.exercise_upload_mouth):
         parser.error('Portrait mode requires GPU and does not use the face-swap mouth overlay.')
     root = Path(args.output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -49,9 +51,12 @@ async def main():
     else:
         if not args.source_image or not args.target_image:
             parser.error('GPU mode requires source and target images')
-        if args.portrait_runtime:
+        if portrait_engine == 'liveportrait':
             from headless_portrait_worker import HeadlessPortraitWorker
             worker = HeadlessPortraitWorker(args.source_image,run,args.portrait_runtime)
+        elif portrait_engine == 'lia':
+            from headless_lia_portrait_worker import HeadlessLiaPortraitWorker
+            worker = HeadlessLiaPortraitWorker(args.source_image,run)
         else:
             from headless_cloud_worker import HeadlessCloudWorker
             worker = HeadlessCloudWorker(args.source_image, run, require_cuda=True)
@@ -132,7 +137,8 @@ async def main():
             response = await http.get(url+'/session/'+sid, headers=headers)
             assert response.status == 404
             report = {'scope':'loopback HTTP signaling and WebRTC video', 'frames_received':5,
-                      'rendering_mode':'portrait' if args.portrait_runtime else 'face',
+                      'rendering_mode':'portrait' if portrait_engine else 'face',
+                      'portrait_engine':portrait_engine,
                       'packets_received':packets,'output_shape':list(received.shape),
                       'original_mae':original_error,'processed_reference_mae':processed_error,
                       'session':status,'stop_released_session':True,'gpu_verified':not args.transport_only,
@@ -146,7 +152,7 @@ async def main():
         source.stop()
         await runner.cleanup()  # GPU profiles must pass before success is recorded.
     if not args.transport_only:
-        report['execution_evidence'] = str(worker.profile_dir/('portrait-evidence.json' if args.portrait_runtime else 'execution_evidence.json'))
+        report['execution_evidence'] = str(worker.profile_dir/('portrait-evidence.json' if portrait_engine else 'execution_evidence.json'))
     report['status'] = 'passed'
     (run/'signaling-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2),flush=True)

@@ -4,6 +4,7 @@ from unittest.mock import patch
 import numpy as np
 
 import headless_portrait_worker as portrait
+from headless_lia_portrait_worker import HeadlessLiaPortraitWorker
 
 
 class IdentityTransform:
@@ -43,6 +44,21 @@ class PortraitTests(unittest.TestCase):
         worker.closed = False
         with self.assertRaisesRegex(ValueError,'face-swap only'):
             worker.process_frame(np.zeros((64,64,3),np.uint8),preserve_mouth=True)
+
+    def test_lia_missing_face_and_reset_never_return_driver(self):
+        worker = HeadlessLiaPortraitWorker.__new__(HeadlessLiaPortraitWorker)
+        worker.closed = False
+        worker.source = np.full((256,256,3),140,np.uint8)
+        worker.last_output = worker.source.copy()
+        worker.detector = worker.marker = None
+        worker.threshold = .5
+        with patch.object(portrait.smoke,'detect_and_align_face',side_effect=portrait.smoke.NoFaceDetected()):
+            output,status = worker.process_frame(np.zeros((64,64,3),np.uint8))
+        self.assertEqual(status,'avatar_no_face')
+        np.testing.assert_array_equal(output,worker.source)
+        worker.driving_initial = object()
+        worker.reset_motion()
+        self.assertIsNone(worker.driving_initial)
 
 
 if __name__ == '__main__':

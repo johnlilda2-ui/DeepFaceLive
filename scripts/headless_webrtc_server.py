@@ -275,6 +275,7 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
         return web.json_response({'iceServers': ice_servers, 'relayOnly': relay_only,
                                   'sessionSeconds': session_seconds, 'hasIceServers': bool(ice_servers),
                                   'renderingMode':getattr(worker,'mode','face'),
+                                  'portraitEngine':getattr(worker,'engine',None),
                                   'identityRevision': manager.identity_revision})
 
     async def identity(request):
@@ -372,7 +373,8 @@ def main():
     parser.add_argument('--relay-only', action='store_true')
     parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
     parser.add_argument('--mode', choices=['face','portrait'], default='face')
-    parser.add_argument('--portrait-runtime', help='Pinned LivePortrait runtime directory; required for portrait mode.')
+    parser.add_argument('--portrait-runtime', help='Pinned runtime directory for the optional LivePortrait engine.')
+    parser.add_argument('--portrait-engine',choices=['lia','liveportrait'],default='lia')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -383,11 +385,16 @@ def main():
     if args.mode == 'portrait' and args.diagnostic_cpu:
         parser.error('Portrait mode requires GPU; diagnostic CPU mode cannot enable it.')
     if args.mode == 'portrait':
-        if not args.portrait_runtime or not args.source_image:
-            parser.error('Portrait mode needs --portrait-runtime and --source-image.')
-        from headless_portrait_worker import HeadlessPortraitWorker
+        if not args.source_image:
+            parser.error('Portrait mode needs --source-image.')
+        if args.portrait_engine == 'liveportrait':
+            if not args.portrait_runtime:
+                parser.error('LivePortrait needs --portrait-runtime.')
+            from headless_portrait_worker import HeadlessPortraitWorker as PortraitWorker
+        else:
+            from headless_lia_portrait_worker import HeadlessLiaPortraitWorker as PortraitWorker
         import cv2
-        worker = HeadlessPortraitWorker(args.source_image,args.evidence_dir,args.portrait_runtime)
+        worker = PortraitWorker(args.source_image,args.evidence_dir,args.portrait_runtime)
         worker.process_frame(cv2.imread(args.source_image))
     elif args.diagnostic_cpu:
         class DiagnosticWorker:

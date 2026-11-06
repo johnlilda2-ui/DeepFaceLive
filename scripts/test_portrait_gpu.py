@@ -9,21 +9,29 @@ import time
 def main():
     import cv2
     import numpy as np
-    import torch
-    from headless_portrait_worker import HeadlessPortraitWorker
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--runtime-dir',required=True)
+    parser.add_argument('--runtime-dir')
+    parser.add_argument('--engine',choices=['lia','liveportrait'])
     parser.add_argument('--source-image',required=True)
     parser.add_argument('--driver-image',required=True)
     parser.add_argument('--second-driver-image',required=True)
     parser.add_argument('--output-dir',required=True)
     parser.add_argument('--profile-cuda',action='store_true',help='Optional heavier CUPTI trace after the normal CUDA event test.')
     args = parser.parse_args()
+    engine = args.engine or ('liveportrait' if args.runtime_dir else 'lia')
+    torch = None
+    if engine == 'liveportrait':
+        if not args.runtime_dir:
+            parser.error('LivePortrait needs --runtime-dir')
+        import torch
+        from headless_portrait_worker import HeadlessPortraitWorker as Worker
+    else:
+        from headless_lia_portrait_worker import HeadlessLiaPortraitWorker as Worker
     root = Path(args.output_dir).resolve()
     root.mkdir(parents=True,exist_ok=True)
     run = Path(tempfile.mkdtemp(prefix='run-',dir=root))
     print('PORTRAIT_STAGE loading_worker',flush=True)
-    worker = HeadlessPortraitWorker(args.source_image,run,args.runtime_dir)
+    worker = Worker(args.source_image,run,args.runtime_dir)
     print('PORTRAIT_STAGE worker_loaded',flush=True)
     first, second = cv2.imread(args.driver_image), cv2.imread(args.second_driver_image)
     assert first is not None and second is not None
@@ -32,7 +40,8 @@ def main():
         for index, driver in enumerate([first]*3+[second]*3):
             started = time.perf_counter()
             frame, status = worker.process_frame(driver)
-            torch.cuda.synchronize()
+            if torch is not None:
+                torch.cuda.synchronize()
             times.append((time.perf_counter()-started)*1000)
             print('PORTRAIT_FRAME',index,'ms',round(times[-1],2),flush=True)
             assert status == 'avatar' and frame.shape == worker.source.shape
@@ -45,15 +54,16 @@ def main():
         worker.reset_motion()
         reset, _ = worker.process_frame(first)
         assert float(np.abs(reset.astype(float)-frames[0]).mean()) < .1,'New session failed to reset motion calibration'
-        start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-        start.record()
-        worker.process_frame(second)
-        end.record()
-        torch.cuda.synchronize()
-        cuda_ms = start.elapsed_time(end)
-        assert cuda_ms > 0,'CUDA stream recorded no portrait rendering duration'
-        cuda_events = None
-        if args.profile_cuda:
+        cuda_ms = cuda_events = None
+        if torch is not None:
+            start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+            start.record()
+            worker.process_frame(second)
+            end.record()
+            torch.cuda.synchronize()
+            cuda_ms = start.elapsed_time(end)
+            assert cuda_ms > 0,'CUDA stream recorded no portrait rendering duration'
+        if args.profile_cuda and torch is not None:
             with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,torch.profiler.ProfilerActivity.CUDA]) as profile:
                 worker.process_frame(second)
                 torch.cuda.synchronize()
@@ -68,7 +78,7 @@ def main():
         writer.release()
     finally:
         worker.close()
-    report = {'status':'passed','scope':'two fictional driving stills; not live webcam or full-body motion',
+    report = {'status':'passed','engine':engine,'scope':'two fictional driving stills; not live webcam or full-body motion',
               'output_shape':list(frames[0].shape),'motion_change_mae':motion_change,
               'no_face_kept_portrait':True,'motion_reset_verified':True,'torch_cuda_events':cuda_events,
               'cuda_elapsed_ms':cuda_ms,

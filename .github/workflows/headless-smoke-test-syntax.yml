@@ -13,6 +13,7 @@ on:
       - "scripts/webrtc_client.*"
       - "scripts/headless_cloud_worker.py"
       - "scripts/headless_portrait_worker.py"
+      - "scripts/headless_lia_portrait_worker.py"
       - "scripts/prepare_portrait_runtime.py"
       - "scripts/prepare_portrait_environment.py"
       - "scripts/test_headless_portrait.py"
@@ -50,6 +51,7 @@ jobs:
             doc/celebs/Millie_Park/Millie_Park.png
             scripts/headless_cloud_worker.py
             scripts/headless_portrait_worker.py
+            scripts/headless_lia_portrait_worker.py
             scripts/prepare_portrait_runtime.py
             scripts/prepare_portrait_environment.py
             scripts/test_headless_portrait.py
@@ -70,7 +72,7 @@ jobs:
       - name: Compile smoke-test script
         run: |
           python -m py_compile scripts/headless_inference_smoke_test.py
-          python -m py_compile scripts/headless_portrait_worker.py scripts/prepare_portrait_runtime.py scripts/prepare_portrait_environment.py scripts/test_portrait_gpu.py
+          python -m py_compile scripts/headless_portrait_worker.py scripts/headless_lia_portrait_worker.py scripts/prepare_portrait_runtime.py scripts/prepare_portrait_environment.py scripts/test_portrait_gpu.py
       - name: Test notebook syntax and CUDA evidence gate (CPU only)
         run: python -m unittest discover -s scripts -p test_headless_cuda_evidence.py
       - name: Install CPU frame-test dependencies
