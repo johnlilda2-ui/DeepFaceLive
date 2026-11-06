@@ -26,9 +26,16 @@ def main():
     parser.add_argument('--frames', type=int, default=1)
     parser.add_argument('--motion-stride', type=int, default=5)
     parser.add_argument('--fps', type=int, default=6)
+    parser.add_argument('--render-height', type=int, default=420)
+    parser.add_argument('--framing-box', type=float, nargs=4, metavar=('LEFT', 'TOP', 'RIGHT', 'BOTTOM'))
+    parser.add_argument('--benchmark-repeats', type=int, default=0)
     args = parser.parse_args()
     if not 1 <= args.frames <= 18 or args.motion_stride < 1 or not 1 <= args.fps <= 30:
         parser.error('Require 1..18 frames, positive motion stride, and 1..30 fps')
+    if args.render_height < 14 or args.render_height > 840 or args.render_height % 14:
+        parser.error('--render-height must be a multiple of 14 between 14 and 840')
+    if not 0 <= args.benchmark_repeats <= 5:
+        parser.error('--benchmark-repeats must be between 0 and 5')
     root = args.runtime_root.resolve(strict=True)
     model_dir = args.model_dir.resolve(strict=True)
     reference = args.reference.resolve(strict=True)
@@ -130,14 +137,18 @@ def main():
         motion['offset_list'] = [seq['offset_list'][0] for seq in sequences]
         report['motion_frame_files'] = [path.name for path in selected]
         old_h, old_w = motion['ori_size']
-        height = 420
-        width = max(14, round(height * old_w / old_h / 14) * 14)
-        sx, sy = width / old_w, height / old_h
+        from lhmpp_camera_framing import framing_transform
+        framing = framing_transform(old_w, old_h, args.render_height, args.framing_box)
+        report['camera_framing'] = framing
+        width, height = framing['width'], framing['height']
+        sx, sy = framing['scale_x'], framing['scale_y']
+        motion['render_intrs'][..., 0, 2] -= framing['left']
+        motion['render_intrs'][..., 1, 2] -= framing['top']
         motion['render_intrs'][..., 0, :] *= sx
         motion['render_intrs'][..., 1, :] *= sy
         params = motion['smplx_params']
         params['focal'] *= torch.tensor([sx, sy])
-        params['princpt'] *= torch.tensor([sx, sy])
+        params['princpt'] = (params['princpt'] - torch.tensor([framing['left'], framing['top']])) * torch.tensor([sx, sy])
         params['img_size_wh'][...] = torch.tensor([width, height])
         params['betas'] = torch.from_numpy(betas).float().reshape(1, -1)
         motion['ori_size'] = (height, width)
@@ -145,6 +156,12 @@ def main():
         report['stage'] = 'neural_inference'
         print('STAGE neural_inference', flush=True)
         timings = {'reconstruction': [], 'render': []}
+        reconstruction_cache = {}
+        original_reconstruct = model.infer_single_view
+        def reconstruct(*fn_args, **fn_kwargs):
+            value = original_reconstruct(*fn_args, **fn_kwargs)
+            reconstruction_cache['value'] = value
+            return value
         def timed(label, fn):
             def call(*fn_args, **fn_kwargs):
                 torch.cuda.synchronize()
@@ -154,7 +171,7 @@ def main():
                 timings[label].append(time.monotonic() - begin)
                 return value
             return call
-        model.infer_single_view = timed('reconstruction', model.infer_single_view)
+        model.infer_single_view = timed('reconstruction', reconstruct)
         model.animation_infer = timed('render', model.animation_infer)
         torch.cuda.reset_peak_memory_stats()
         torch.cuda.synchronize()
@@ -180,6 +197,37 @@ def main():
                       peak_reserved_bytes=torch.cuda.max_memory_reserved())
         if not kernels or frames.shape[0] != args.frames or not np.isfinite(frames).all():
             raise RuntimeError('Missing CUDA events or invalid frame output')
+        if args.benchmark_repeats:
+            # Reuse the identical reference reconstruction only within this
+            # fixed-reference, fixed-pose benchmark. Never cache across uploads.
+            model.infer_single_view = lambda *a, **kw: reconstruction_cache['value']
+            def render_cached():
+                return helper._ai.inference_results(
+                    model, tensor, params, motion, video_size=args.frames,
+                    batch_size=1, device='cuda', infer_output_renderer='neural')
+            with torch.inference_mode():
+                render_cached()  # one explicit warmup, excluded from measurements
+                samples = []
+                for repeat in range(args.benchmark_repeats):
+                    timings['render'].clear()
+                    torch.cuda.synchronize()
+                    begin = time.monotonic()
+                    repeated = render_cached()
+                    torch.cuda.synchronize()
+                    elapsed = time.monotonic() - begin
+                    error = float(np.abs(repeated.astype(float) - frames.astype(float)).mean())
+                    if not np.isfinite(repeated).all() or error > 0.5:
+                        raise RuntimeError('Cached rendering changed output unexpectedly')
+                    samples.append({'sequence_seconds': elapsed,
+                                    'fps_including_cpu_and_readback': args.frames / elapsed,
+                                    'render_call_seconds': sum(timings['render']),
+                                    'mean_abs_difference_from_verified_run': error})
+            report['unprofiled_cached_benchmark'] = {
+                'warmup_sequences': 1, 'repeats': samples,
+                'median_fps_including_cpu_and_readback': float(np.median(
+                    [sample['fps_including_cpu_and_readback'] for sample in samples])),
+                'reconstruction_excluded': True, 'video_encoding_excluded': True,
+                'live_tracking_and_network_excluded': True}
         frame = frames[0]
         if frame.std() < 1:
             raise RuntimeError('Frame is effectively blank; visual verification required')
@@ -206,3 +254,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
