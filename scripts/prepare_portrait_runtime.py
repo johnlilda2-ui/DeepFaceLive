@@ -39,6 +39,7 @@ def main():
     if origin not in ('https://github.com/KlingAIResearch/LivePortrait',
                       'https://github.com/KlingTeam/LivePortrait','https://github.com/KwaiVGI/LivePortrait'):
         raise ValueError('Refusing to change a checkout that is not the official portrait runtime.')
+    subprocess.run(['git','-C',str(root),'sparse-checkout','set','--no-cone','/src/','/LICENSE','/readme.md'],check=True)
     subprocess.run(['git','-C',str(root),'fetch','--depth','1','origin',CODE_REVISION],check=True)
     subprocess.run(['git','-C',str(root),'checkout','--detach',CODE_REVISION],check=True)
     with urllib.request.urlopen('https://huggingface.co/api/models/KlingTeam/LivePortrait/revision/'+WEIGHTS_REVISION+'?blobs=true',timeout=45) as response:
