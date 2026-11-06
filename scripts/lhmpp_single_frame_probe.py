@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline LHM++ neural-render probe; requires prepared, verified model assets.
+"""Offline LHM++ frame/short-clip probe; requires prepared, verified assets.
 
 Use fictional or consented full-body references. This does not implement live
 tracking, streaming, lip sync, or guarantee target likeness.
@@ -23,16 +23,23 @@ def main():
     for name in ('runtime-root', 'model-dir', 'reference', 'pose-json', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--t4-memory-efficient-attention', action='store_true')
+    parser.add_argument('--frames', type=int, default=1)
+    parser.add_argument('--motion-stride', type=int, default=5)
+    parser.add_argument('--fps', type=int, default=6)
     args = parser.parse_args()
+    if not 1 <= args.frames <= 18 or args.motion_stride < 1 or not 1 <= args.fps <= 30:
+        parser.error('Require 1..18 frames, positive motion stride, and 1..30 fps')
     root = args.runtime_root.resolve(strict=True)
     model_dir = args.model_dir.resolve(strict=True)
     reference = args.reference.resolve(strict=True)
     pose_json = args.pose_json.resolve(strict=True)
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    report = {'scope': 'offline_single_frame_neural_render', 'passed': False,
+    report = {'scope': 'offline_neural_render_probe', 'passed': False,
               'live_verified': False, 'reference': reference.name,
-              'pose_json': str(pose_json), 'stage': 'preflight'}
+              'pose_json': str(pose_json), 'stage': 'preflight',
+              'requested_frames': args.frames, 'output_fps': args.fps,
+              'motion_stride': args.motion_stride}
     os.chdir(root)
     sys.path.insert(0, str(root))
     try:
@@ -96,6 +103,8 @@ def main():
         # eval() also returns None. Do not chain it with device placement.
         model.eval()
         model.to('cuda')
+        if not all(p.is_cuda for p in model.parameters()):
+            raise RuntimeError('All model parameters must reside on CUDA')
         if args.t4_memory_efficient_attention:
             from lhmpp_t4_attention import enable_t4_attention
             report['attention_adapter'] = enable_t4_attention(model)
@@ -103,7 +112,23 @@ def main():
         spec = importlib.util.spec_from_file_location('lhmpp_pose_helpers', helper_path)
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
-        motion = helper._build_motion_seq_from_pose_json(str(pose_json), {})
+        available = sorted(pose_json.parent.glob('*.json'))
+        first = available.index(pose_json)
+        selected = available[first::args.motion_stride][:args.frames]
+        if len(selected) != args.frames:
+            raise RuntimeError('Not enough prepared motion frames')
+        sequences = [helper._build_motion_seq_from_pose_json(str(path), {}) for path in selected]
+        motion = sequences[0]
+        if any(seq['ori_size'] != motion['ori_size'] for seq in sequences):
+            raise RuntimeError('Changing motion image size is unsupported')
+        for key in ('render_c2ws', 'render_intrs', 'render_bg_colors'):
+            motion[key] = torch.cat([seq[key] for seq in sequences], dim=1)
+        motion['smplx_params'] = {
+            key: value if key == 'betas' else torch.cat(
+                [seq['smplx_params'][key] for seq in sequences], dim=1)
+            for key, value in sequences[0]['smplx_params'].items()}
+        motion['offset_list'] = [seq['offset_list'][0] for seq in sequences]
+        report['motion_frame_files'] = [path.name for path in selected]
         old_h, old_w = motion['ori_size']
         height = 420
         width = max(14, round(height * old_w / old_h / 14) * 14)
@@ -119,6 +144,18 @@ def main():
         tensor = torch.from_numpy(np.asarray(source).copy()).permute(2, 0, 1).float()[None] / 255
         report['stage'] = 'neural_inference'
         print('STAGE neural_inference', flush=True)
+        timings = {'reconstruction': [], 'render': []}
+        def timed(label, fn):
+            def call(*fn_args, **fn_kwargs):
+                torch.cuda.synchronize()
+                begin = time.monotonic()
+                value = fn(*fn_args, **fn_kwargs)
+                torch.cuda.synchronize()
+                timings[label].append(time.monotonic() - begin)
+                return value
+            return call
+        model.infer_single_view = timed('reconstruction', model.infer_single_view)
+        model.animation_infer = timed('render', model.animation_infer)
         torch.cuda.reset_peak_memory_stats()
         torch.cuda.synchronize()
         start = time.monotonic()
@@ -126,21 +163,35 @@ def main():
             torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,
         ]) as prof:
             frames = helper._ai.inference_results(
-                model, tensor, params, motion, video_size=1,
+                model, tensor, params, motion, video_size=args.frames,
                 batch_size=1, device='cuda', infer_output_renderer='neural')
             torch.cuda.synchronize()
         report['inference_seconds'] = time.monotonic() - start
         kernels = [e.name for e in prof.events()
-                   if e.device_type == torch.autograd.DeviceType.CUDA]
-        report.update(cuda_event_count=len(kernels), cuda_event_examples=kernels[:20],
+                   if e.device_type == torch.autograd.DeviceType.CUDA
+                   and not e.name.startswith(('Memcpy', 'Memset'))]
+        prof.export_chrome_trace(str(output / 'cuda-trace.json'))
+        render_seconds = sum(timings['render'])
+        report.update(cuda_kernel_count=len(kernels), cuda_kernel_examples=kernels[:20],
+                      reconstruction_seconds=sum(timings['reconstruction']),
+                      render_seconds=render_seconds,
+                      render_fps_excluding_reconstruction=args.frames / render_seconds,
                       peak_allocated_bytes=torch.cuda.max_memory_allocated(),
                       peak_reserved_bytes=torch.cuda.max_memory_reserved())
-        if not kernels or frames.shape[0] != 1 or not np.isfinite(frames).all():
+        if not kernels or frames.shape[0] != args.frames or not np.isfinite(frames).all():
             raise RuntimeError('Missing CUDA events or invalid frame output')
         frame = frames[0]
         if frame.std() < 1:
             raise RuntimeError('Frame is effectively blank; visual verification required')
         Image.fromarray(frame).save(output / 'frame.png')
+        if args.frames > 1:
+            import imageio.v3 as iio
+            iio.imwrite(output / 'motion.mp4', frames, fps=args.fps, codec='libx264',
+                        pixelformat='yuv420p', macro_block_size=2)
+            change = np.abs(frames[-1].astype(float) - frames[0].astype(float)).mean()
+            report['first_last_frame_mean_abs_difference'] = float(change)
+            if change < 0.1:
+                raise RuntimeError('Motion output is effectively static')
         report.update(passed=True, stage='rendered_requires_visual_review',
                       frame_shape=list(frame.shape), frame_std=float(frame.std()))
     except Exception:
