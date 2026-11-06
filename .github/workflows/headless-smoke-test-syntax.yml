@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   python-syntax:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out smoke-test script only
         uses: actions/checkout@v4
