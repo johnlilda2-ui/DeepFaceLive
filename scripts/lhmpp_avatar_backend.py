@@ -167,7 +167,9 @@ class LHMAvatarBackend:
         self.animation_betas = params['betas']
         self.stats.update(avatar_reconstructions=1, cache_present=True)
 
-    def render(self, packet):
+    def render(self, packet, *, output_renderer='neural'):
+        if output_renderer not in ('neural', 'gs'):
+            raise ValueError('Output renderer must be neural or gs')
         if self.stats['closed'] or self.cache is None:
             raise RuntimeError('Avatar cache is unavailable')
         torch = self.torch
@@ -185,7 +187,7 @@ class LHMAvatarBackend:
                 render_intrs=motion['render_intrs'].to('cuda'),
                 render_bg_colors=motion['render_bg_colors'].to('cuda'),
                 mask_seqs=[self.mask], offset_list=[[1.0, 1.0, 0, 0]],
-                output_rgb=self.output_rgb, infer_output_renderer='neural')
+                output_rgb=self.output_rgb, infer_output_renderer=output_renderer)
             if rgb.shape != (1, *self.output_shape) or not torch.isfinite(rgb).all().item():
                 raise RuntimeError('Invalid floating-point rendered frame')
             frame = (rgb[0].clamp(0, 1) * 255).to(torch.uint8).cpu().numpy().copy()
