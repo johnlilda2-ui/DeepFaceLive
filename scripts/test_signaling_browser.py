@@ -7,6 +7,7 @@ external-network verification.
 """
 import asyncio
 import json
+import io
 from pathlib import Path
 
 from aiohttp import web
@@ -18,7 +19,9 @@ TOKEN = 'ci-only-not-a-real-credential-' + 'x' * 32
 
 
 class DiagnosticWorker:
-    def process_frame(self, image):
+    def set_identity(self, image):
+        self.identity_shape = image.shape
+    def process_frame(self, image, preserve_mouth=False):
         return 255 - image, 'browser_diagnostic'
     def close(self):
         pass
@@ -66,11 +69,26 @@ async def main():
             await page.get_by_role('status').filter(has_text='Connection token rejected.').wait_for()
             assert app[MANAGER].session is None, 'Unauthorized browser obtained a session'
             await page.get_by_label('Connection token', exact=True).fill(TOKEN)
+            from PIL import Image
+            photo = io.BytesIO()
+            Image.new('RGB',(128,128),(180,90,40)).save(photo,format='PNG')
+            await page.get_by_label('Face photo to use for the swap',exact=True).set_input_files({
+                'name':'synthetic-test-photo.png','mimeType':'image/png','buffer':photo.getvalue()})
+            await page.get_by_role('button',name='Use this face photo',exact=True).click()
+            await page.get_by_text('Confirm that you have permission to use this photo.',exact=True).wait_for()
+            await page.get_by_label('I have permission to use this face photo.',exact=True).check()
+            await page.get_by_role('button',name='Use this face photo',exact=True).click()
+            await page.get_by_text('Face photo ready (revision 1).',exact=False).wait_for()
+            assert app[MANAGER].worker.identity_shape == (128,128,3)
+            report['photo_upload_ui_verified'] = True
             for mode in ('Test demo', 'Start camera'):
+                if mode == 'Start camera':
+                    await page.get_by_label('Preserve my real mouth and lip movements',exact=False).check()
                 await page.get_by_role('button', name=mode, exact=True).click()
                 stats = await wait_for_return(page)
                 assert stats['connection'] == 'connected', stats
                 assert stats['inversionMae'] < 20 and stats['inversionMae'] < stats['originalMae'], stats
+                assert app[MANAGER].session['track'].preserve_mouth == (mode == 'Start camera')
                 await page.evaluate("window.savedTestTracks = document.querySelector('#local').srcObject.getTracks()")
                 audio_tracks = await page.evaluate("document.querySelector('#local').srcObject.getAudioTracks().length")
                 assert audio_tracks == 0, 'Audio was captured'
@@ -97,6 +115,16 @@ async def main():
                 assert await page.evaluate("window.savedTestTracks.every(t=>t.readyState==='ended')"), 'Camera tracks leaked'
                 assert app[MANAGER].session is None, 'Server slot leaked after Stop'
                 report['sessions'].append({'mode':mode,**stats,'audio_tracks':audio_tracks,'stop_released_resources':True})
+            await page.get_by_label('Swap face (turn off',exact=False).uncheck()
+            await page.get_by_role('button',name='Test demo',exact=True).click()
+            bypass = await wait_for_return(page)
+            assert bypass['originalMae'] < 20 and bypass['originalMae'] < bypass['inversionMae'], bypass
+            assert app[MANAGER].session['track'].last_status == 'bypass'
+            report['bypass_comparison_verified'] = True
+            await page.get_by_role('button',name='Stop',exact=True).click()
+            await page.get_by_role('status').filter(has_text='Camera and cloud session released.').wait_for()
+            await page.get_by_label('Swap face (turn off',exact=False).check()
+            await page.get_by_label('Preserve my real mouth and lip movements',exact=False).uncheck()
             # A persistent outage must still release local media and the server slot.
             await page.get_by_role('button', name='Test demo', exact=True).click()
             await wait_for_return(page)

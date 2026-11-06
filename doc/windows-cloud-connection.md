@@ -133,3 +133,26 @@ are retried for up to 15 seconds while existing video remains open. Recovery
 keeps the same session; a persistent outage releases media with an expiry/link
 message. A fresh preview is necessary after its deliberate shutdown; client
 retries do not restart cloud processes.
+
+## Choosing the replacement face and preserving lip movement
+
+The browser accepts a JPEG or PNG identity photo (up to 4 MB, one visible face).
+Select the photo, confirm permission, and click **Use this face photo** while
+video is stopped. The authenticated server checks dimensions before decoding,
+limits images to 8 megapixels and 4096 pixels per side, normalizes EXIF rotation,
+and reduces the decoded photo to 1024 pixels per side. Invalid or multi-face
+photos leave the previous identity unchanged. Uploads are not written to disk;
+the worker keeps the derived identity vector until replaced or the server stops.
+The chosen photo preview stays in the local browser. Reloading the page does
+not reset the cloud identity; its revision is reported by `/config`.
+
+**Swap face** can be disabled before starting for an original-video comparison
+through the same cloud transport. **Face result** distinguishes swapped, no-face
+passthrough and bypass frames. The swap changes the face region; hair, body and
+background remain from the webcam.
+
+**Preserve my real mouth and lip movements** uses the existing 106 landmarks,
+converted through the repository's 68-point mapping, to exclude a feathered mouth
+region from the swap. This preserves the real lips and teeth, and may retain some
+of the user's appearance. It is an optional mouth composite, not audio-driven
+lip synthesis or measured audio/video synchronization. Audio capture remains off.

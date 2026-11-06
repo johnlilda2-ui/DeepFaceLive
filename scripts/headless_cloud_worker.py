@@ -23,7 +23,7 @@ def validate_frame(frame):
         raise ValueError('Expected a uint8 BGR frame, HxWx3, at least 32x32.')
 
 
-def composite_face(frame, swapped, transform):
+def composite_face(frame, swapped, transform, mouth=None):
     """Feathered ellipse baseline, using premultiplied alpha to avoid dark edges."""
     import cv2
     import numpy as np
@@ -33,6 +33,15 @@ def composite_face(frame, swapped, transform):
     cv2.ellipse(alpha, (size // 2, size // 2), (int(size * .38), int(size * .43)),
                 0, 0, 360, 1.0, -1)
     alpha = cv2.GaussianBlur(alpha, (21, 21), 5)
+    if mouth is not None:
+        mouth = np.asarray(mouth, dtype=np.float32)
+        if mouth.shape != (20, 2) or not np.isfinite(mouth).all():
+            raise ValueError('Invalid mouth landmarks.')
+        lip_mask = np.zeros_like(alpha)
+        cv2.fillConvexPoly(lip_mask, cv2.convexHull(np.rint(mouth).astype(np.int32)), 1)
+        lip_mask = cv2.dilate(lip_mask, np.ones((5, 5), np.uint8))
+        lip_mask = cv2.GaussianBlur(lip_mask, (7, 7), 1.2)
+        alpha *= 1.0 - lip_mask
     matrix = transform.invert().to_exact_mat(size, size, width, height)
     warped_alpha = cv2.warpAffine(alpha, matrix, (width, height), flags=cv2.INTER_LINEAR)
     premultiplied = swapped.astype(np.float32) * alpha[..., None]
@@ -58,11 +67,21 @@ class HeadlessCloudWorker:
             self.models = smoke.load_models(self.device, require_cuda)
         self.detector, self.marker, self.swap_model = self.models
         source = smoke.load_image(str(source_image), 'source', cv2)
+        self.set_identity(source)
+
+    def set_identity(self, source):
+        """Validate before replacing the in-memory identity; caller serializes updates."""
+        if self.closed:
+            raise RuntimeError('Worker is closed.')
+        validate_frame(source)
+        if len(self.detector.extract(source, threshold=self.threshold)[0]) != 1:
+            raise ValueError('Choose a photo with exactly one clearly visible face.')
         aligned = smoke.detect_and_align_face(source, 'source', self.detector, self.marker,
                                              1.55, 112, self.threshold)
-        self.face_vector = smoke.get_valid_face_vector(self.swap_model, aligned)
+        vector = smoke.get_valid_face_vector(self.swap_model, aligned)
+        self.face_vector = vector
 
-    def process_frame(self, frame):
+    def process_frame(self, frame, preserve_mouth=False):
         """Return a full-size BGR frame and status; no-face frames pass through."""
         import numpy as np
         if self.closed:
@@ -70,16 +89,18 @@ class HeadlessCloudWorker:
         validate_frame(frame)
         self.frame_count += 1
         try:
-            aligned, transform = smoke.detect_and_align_face(
+            detected = smoke.detect_and_align_face(
                 frame, 'target', self.detector, self.marker, 2.2, 128,
-                self.threshold, return_transform=True)
+                self.threshold, return_transform=True, return_mouth=preserve_mouth)
+            aligned, transform = detected[:2]
         except smoke.NoFaceDetected:
             return frame.copy(), 'no_face'
         swapped = self.swap_model.generate(aligned, self.face_vector)
         if (swapped is None or swapped.shape != aligned.shape or
                 swapped.dtype != np.uint8 or not np.isfinite(swapped).all()):
             raise RuntimeError('Swap model returned an invalid frame.')
-        return composite_face(frame, swapped, transform), 'swapped'
+        return composite_face(frame, swapped, transform,
+                              detected[2] if preserve_mouth else None), 'swapped'
 
     def close(self):
         """Finalize model profiles once, including proof of actual CUDA execution."""

@@ -38,6 +38,23 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result.shape, frame.shape)
         self.assertEqual(result.dtype, frame.dtype)
 
+    def test_mouth_preservation_keeps_original_lips_and_swaps_surrounding_face(self):
+        frame = np.full((128,128,3), 30, np.uint8)
+        swapped = np.full_like(frame,220)
+        angles = np.linspace(0,2*np.pi,20,endpoint=False)
+        mouth = np.column_stack((64+15*np.cos(angles),80+7*np.sin(angles)))
+        result = worker_module.composite_face(frame,swapped,IdentityTransform(),mouth)
+        np.testing.assert_array_equal(result[80,64],frame[80,64])
+        self.assertGreater(result[50,64].min(),200)
+
+    def test_invalid_identity_does_not_replace_existing_vector(self):
+        worker = self.make_worker()
+        worker.face_vector = 'previous'
+        worker.detector = SimpleNamespace(extract=lambda *a,**kw: [[]])
+        with self.assertRaisesRegex(ValueError,'exactly one'):
+            worker.set_identity(np.zeros((128,128,3),np.uint8))
+        self.assertEqual(worker.face_vector,'previous')
+
     def test_no_face_is_an_independent_passthrough_copy(self):
         worker = self.make_worker()
         frame = np.zeros((64, 64, 3), np.uint8)

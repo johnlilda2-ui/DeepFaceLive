@@ -17,10 +17,14 @@ from av import VideoFrame
 class ProcessedVideoTrack(MediaStreamTrack):
     kind = 'video'
 
-    def __init__(self, source, worker):
+    def __init__(self, source, worker, swap_enabled=True, preserve_mouth=False):
         super().__init__()
         self.source = source
         self.worker = worker
+        self.swap_enabled = swap_enabled
+        self.preserve_mouth = preserve_mouth
+        self.last_status = 'waiting'
+        self.swapped_frames = self.no_face_frames = 0
         self.pending = asyncio.Queue(maxsize=1)
         self.reader = None
         self.processing = None
@@ -50,13 +54,21 @@ class ProcessedVideoTrack(MediaStreamTrack):
         async with self._inference_lock:
             started = time.perf_counter()
             try:
-                result, status = await asyncio.to_thread(
-                    self.worker.process_frame, frame.to_ndarray(format='bgr24'))
+                image = frame.to_ndarray(format='bgr24')
+                if not self.swap_enabled:
+                    result, status = image, 'bypass'
+                elif self.preserve_mouth:
+                    result, status = await asyncio.to_thread(self.worker.process_frame, image, preserve_mouth=True)
+                else:
+                    result, status = await asyncio.to_thread(self.worker.process_frame, image)
             except Exception as exc:
                 self.error = exc
                 raise
             self.processing_ms.append((time.perf_counter() - started) * 1000)
             self.processed += 1
+            self.last_status = status
+            self.swapped_frames += status == 'swapped'
+            self.no_face_frames += status == 'no_face'
             output = VideoFrame.from_ndarray(result, format='bgr24')
             output.pts, output.time_base = frame.pts, frame.time_base
             return output

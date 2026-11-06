@@ -1,6 +1,7 @@
 """Real HTTP checks for signaling authorization and session lifecycle."""
 import asyncio
 import json
+import io
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -18,6 +19,8 @@ OFFER = ('v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n'
 
 
 class FakeWorker:
+    def set_identity(self, image):
+        self.identity_shape = image.shape
     def close(self):
         self.closed = True
 
@@ -88,6 +91,34 @@ class SignalingTests(AioHTTPTestCase):
     async def test_oversized_offer_is_rejected(self):
         response = await self.client.post('/offer', json={'sdp':'x'*70000,'type':'offer'}, headers=HEADERS)
         self.assertEqual(response.status, 413)
+
+    async def test_identity_upload_auth_validation_and_active_session(self):
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new('RGB', (128, 128), (100, 60, 20)).save(buffer, format='PNG')
+        data = buffer.getvalue()
+        headers = {**HEADERS, 'Content-Type':'image/png'}
+        response = await self.client.post('/identity', data=data)
+        self.assertEqual(response.status, 401)
+        response = await self.client.post('/identity', data=b'broken', headers=headers)
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.app[server.MANAGER].identity_revision, 0)
+        response = await self.client.post('/identity', data=data, headers=headers)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())['identityRevision'], 1)
+        self.assertEqual(self.worker.identity_shape, (128,128,3))
+        with patch.object(server, 'RTCPeerConnection', FakePeer):
+            response = await self.client.post('/offer', json={'sdp':OFFER,'type':'offer'}, headers=HEADERS)
+            self.assertEqual(response.status, 200)
+            response = await self.client.post('/identity', data=data, headers=headers)
+            self.assertEqual(response.status, 409)
+        response = await self.client.post('/identity', data=b'x'*(4*1024*1024+1), headers=headers)
+        self.assertEqual(response.status, 413)
+
+    async def test_invalid_video_options_are_rejected(self):
+        for field in ('swapEnabled', 'preserveMouth'):
+            response = await self.client.post('/offer', json={'sdp':OFFER,'type':'offer',field:'yes'}, headers=HEADERS)
+            self.assertEqual(response.status,400)
 
     async def test_single_slot_status_stop_and_readmission(self):
         with patch.object(server, 'RTCPeerConnection', FakePeer):

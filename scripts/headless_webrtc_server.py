@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import io
 import logging
 import os
 import re
@@ -24,6 +25,36 @@ from headless_webrtc_track import ProcessedVideoTrack
 
 LOG = logging.getLogger('headless-signaling')
 MANAGER = web.AppKey('manager', object)
+
+
+def decode_identity(data):
+    """Bound image dimensions before pixel decoding; never save the upload."""
+    import warnings
+    import numpy as np
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format not in ('JPEG', 'PNG') or image.n_frames != 1:
+                    raise ValueError('Choose a single JPEG or PNG image.')
+                width, height = image.size
+                if min(width, height) < 64 or max(width, height) > 4096 or width * height > 8_000_000:
+                    raise ValueError('Use an image from 64 pixels up to 4096 pixels, at most 8 megapixels.')
+                image = ImageOps.exif_transpose(image).convert('RGB')
+                image.thumbnail((1024, 1024))
+                return np.asarray(image)[:, :, ::-1].copy()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        raise ValueError('Cannot decode this photo. Choose a valid JPEG or PNG.') from error
+
+
+async def read_limited(request, maximum):
+    data = bytearray()
+    async for chunk in request.content.iter_chunked(65536):
+        data.extend(chunk)
+        if len(data) > maximum:
+            raise web.HTTPRequestEntityTooLarge(max_size=maximum, actual_size=len(data))
+    return bytes(data)
 
 
 def validate_ice_servers(value):
@@ -65,12 +96,32 @@ class SessionManager:
         self.watchdog = None
         self.stopping = False
         self.closed_ids = {}
+        self.identity_revision = 0
+
+    async def set_identity(self, data):
+        async with self.lock:
+            if self.stopping:
+                raise web.HTTPServiceUnavailable(text='Server is shutting down.')
+            if self.session is not None:
+                raise web.HTTPConflict(text='Stop the video before changing the face photo.')
+            def update():
+                image = decode_identity(data)
+                self.worker.set_identity(image)
+            operation = asyncio.create_task(asyncio.to_thread(update))
+            try:
+                await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                await operation  # Do not release admission while GPU work is running.
+                self.identity_revision += 1
+                raise
+            self.identity_revision += 1
+            return {'identityRevision': self.identity_revision}
 
     def _purge_closed_ids(self):
         now = time.monotonic()
         self.closed_ids = {key: expiry for key, expiry in self.closed_ids.items() if expiry > now}
 
-    async def open(self, sdp, session_id=None):
+    async def open(self, sdp, session_id=None, swap_enabled=True, preserve_mouth=False):
         async with self.lock:
             if self.stopping:
                 raise web.HTTPServiceUnavailable(text='Server is shutting down.')
@@ -90,7 +141,7 @@ class SessionManager:
                 if track.kind != 'video' or session['track'] is not None:
                     track.stop()
                     return
-                processed = ProcessedVideoTrack(track, self.worker)
+                processed = ProcessedVideoTrack(track, self.worker, swap_enabled, preserve_mouth)
                 session['track'] = processed
                 pc.addTrack(processed)
 
@@ -145,7 +196,10 @@ class SessionManager:
         return {'state': session['pc'].connectionState, 'iceState': session['pc'].iceConnectionState,
                 'processed': track.processed if track else 0, 'dropped': track.dropped if track else 0,
                 'error': bool(track and track.error), 'expiresIn': max(0, int(
-                    self.session_seconds - (time.monotonic() - session['created'])))}
+                    self.session_seconds - (time.monotonic() - session['created']))),
+                'faceStatus': track.last_status if track else 'waiting',
+                'swappedFrames': track.swapped_frames if track else 0,
+                'noFaceFrames': track.no_face_frames if track else 0}
 
     async def watch(self):
         while True:
@@ -198,7 +252,7 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
         response.headers['Permissions-Policy'] = 'camera=(self), microphone=()'
         return response
 
-    app = web.Application(middlewares=[protect], client_max_size=65536)
+    app = web.Application(middlewares=[protect], client_max_size=4 * 1024 * 1024)
     app[MANAGER] = manager
 
     async def asset(request):
@@ -214,14 +268,25 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
 
     async def config(request):
         return web.json_response({'iceServers': ice_servers, 'relayOnly': relay_only,
-                                  'sessionSeconds': session_seconds, 'hasIceServers': bool(ice_servers)})
+                                  'sessionSeconds': session_seconds, 'hasIceServers': bool(ice_servers),
+                                  'identityRevision': manager.identity_revision})
+
+    async def identity(request):
+        if request.content_type not in ('image/jpeg', 'image/png'):
+            raise web.HTTPUnsupportedMediaType(text='Choose a JPEG or PNG photo.')
+        try:
+            return web.json_response(await manager.set_identity(await read_limited(request, 4 * 1024 * 1024)))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from error
 
     async def offer(request):
         try:
-            data = await request.json()
-            if (not isinstance(data, dict) or set(data) - {'sdp', 'type', 'id'} or not {'sdp', 'type'} <= set(data) or
+            data = json.loads(await read_limited(request, 65536))
+            if (not isinstance(data, dict) or set(data) - {'sdp', 'type', 'id', 'swapEnabled', 'preserveMouth'} or not {'sdp', 'type'} <= set(data) or
                     data['type'] != 'offer' or not isinstance(data['sdp'], str)):
                 raise ValueError('Expected a video SDP offer.')
+            if any(type(data[field]) is not bool for field in ('swapEnabled', 'preserveMouth') if field in data):
+                raise ValueError('Video options must be booleans.')
             if 'id' in data and (not isinstance(data['id'], str) or
                     re.fullmatch(r'[A-Za-z0-9_-]{16,64}', data['id']) is None):
                 raise ValueError('Invalid session id.')
@@ -229,7 +294,8 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
             if (len(parsed.media) != 1 or parsed.media[0].kind != 'video' or
                     parsed.media[0].direction != 'sendrecv'):
                 raise ValueError('Offer exactly one outgoing video track and no audio/data tracks.')
-            answer = await manager.open(data['sdp'], data.get('id'))
+            answer = await manager.open(data['sdp'], data.get('id'),
+                                        data.get('swapEnabled', True), data.get('preserveMouth', False))
             return web.json_response(answer)
         except web.HTTPException:
             raise
@@ -250,6 +316,7 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
     app.router.add_get('/client.css', asset)
     app.router.add_get('/demo.png', demo)
     app.router.add_get('/config', config)
+    app.router.add_post('/identity', identity)
     app.router.add_post('/offer', offer)
     app.router.add_get('/session/{id}', status)
     app.router.add_delete('/session/{id}', stop)
@@ -261,11 +328,12 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
         manager.stopping = True
         manager.watchdog.cancel()
         await asyncio.gather(manager.watchdog, return_exceptions=True)
-        try:
-            if manager.session:
-                await manager.close(manager.session['id'])
-        finally:
-            await asyncio.to_thread(worker.close)
+        async with manager.lock:
+            try:
+                if manager.session:
+                    await manager._close_locked(manager.session)
+            finally:
+                await asyncio.to_thread(worker.close)
 
     app.on_startup.append(startup)
     app.on_cleanup.append(cleanup)
@@ -306,6 +374,8 @@ def main():
     ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
     if args.diagnostic_cpu:
         class DiagnosticWorker:
+            def set_identity(self, image):
+                pass  # Explicit CPU UI test only; never claims identity inference.
             def process_frame(self, frame):
                 return 255 - frame, 'diagnostic'
             def close(self):

@@ -30,10 +30,13 @@ class DiagnosticWorker:
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--transport-only', action='store_true')
+    parser.add_argument('--exercise-upload-mouth', action='store_true', help='GPU identity upload and mouth-preserving return test.')
     parser.add_argument('--source-image')
     parser.add_argument('--target-image')
     parser.add_argument('--output-dir', default='artifacts/http-signaling')
     args = parser.parse_args()
+    if args.transport_only and args.exercise_upload_mouth:
+        parser.error('--exercise-upload-mouth requires the GPU worker')
     root = Path(args.output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     run = Path(tempfile.mkdtemp(prefix='run-', dir=root))
@@ -69,10 +72,25 @@ async def main():
         async with ClientSession() as http:
             response = await http.get(url+'/config')
             assert response.status == 401, 'Unauthenticated configuration was exposed'
+            upload_change = mouth_change = None
+            if args.exercise_upload_mouth:
+                photo_headers = {**headers, 'Content-Type':'image/png'}
+                response = await http.post(url+'/identity',headers=photo_headers,data=Path(args.target_image).read_bytes())
+                assert response.status == 200, await response.text()
+                other_identity, _ = await asyncio.to_thread(worker.process_frame,target)
+                upload_change = float(np.abs(other_identity.astype(float)-expected).mean())
+                assert upload_change > .1, 'Changing the uploaded identity did not change output'
+                response = await http.post(url+'/identity',headers=photo_headers,data=Path(args.source_image).read_bytes())
+                assert response.status == 200, await response.text()
+                with_mouth, _ = await asyncio.to_thread(worker.process_frame,target,preserve_mouth=True)
+                mouth_change = float(np.abs(with_mouth.astype(float)-expected).mean())
+                assert mouth_change > .01, 'Mouth preservation did not change output'
+                expected = with_mouth
             await peer.setLocalDescription(await peer.createOffer())
             sid = secrets.token_urlsafe(24)
             response = await http.post(url+'/offer', headers=headers, json={
-                'type':'offer','sdp':peer.localDescription.sdp,'id':sid})
+                'type':'offer','sdp':peer.localDescription.sdp,'id':sid,
+                'preserveMouth':args.exercise_upload_mouth})
             if response.status != 200:
                 raise RuntimeError(f'Signaling failed ({response.status}): {await response.text()}')
             answer = await response.json()
@@ -104,6 +122,9 @@ async def main():
                       'packets_received':packets,'output_shape':list(received.shape),
                       'original_mae':original_error,'processed_reference_mae':processed_error,
                       'session':status,'stop_released_session':True,'gpu_verified':not args.transport_only,
+                      'identity_upload_verified':args.exercise_upload_mouth,
+                      'mouth_preservation_verified':args.exercise_upload_mouth,
+                      'identity_change_mae':upload_change,'mouth_change_mae':mouth_change,
                       'external_windows_tested':False}
             assert cv2.imwrite(str(run/'returned_frame.png'),received)
     finally:

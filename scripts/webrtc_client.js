@@ -3,11 +3,15 @@ const $ = id => document.getElementById(id);
 let peer, stream, controller, sessionId, connectionToken = '', epoch = 0;
 let polling, rendering, connectionDeadline, pollingBusy = false;
 let pollingFailureSince = null;
+let uploading = false;
+let selectedPhotoReady = false;
 const POLL_RETRY_MS = 15000;
 const message = value => { $('status').textContent = value; };
 function buttons(running) {
-  $('camera').disabled = running; $('demo').disabled = running;
-  $('stop').disabled = !running; $('token').disabled = running;
+  $('camera').disabled = running || uploading; $('demo').disabled = running || uploading;
+  $('stop').disabled = !running; $('token').disabled = running || uploading;
+  for (const id of ['identityPhoto','photoConsent','uploadIdentity','swapEnabled','preserveMouth'])
+    $(id).disabled = running || uploading;
 }
 async function api(path, options = {}) {
   const response = await fetch(path, {cache:'no-store', ...options,
@@ -74,6 +78,7 @@ async function poll(myEpoch) {
     const recovered = pollingFailureSince !== null;
     pollingFailureSince = null;
     $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped`;
+    $('faceResult').textContent = `${status.faceStatus || 'waiting'} · ${status.swappedFrames || 0} swapped · ${status.noFaceFrames || 0} no face`;
     if (status.error) throw new Error('Cloud video processing failed. Stop and check the cloud log.');
     if (peer.connectionState === 'connected') {
       const remaining = Math.max(0, Math.floor(status.expiresIn ?? 0));
@@ -110,7 +115,10 @@ async function poll(myEpoch) {
   finally {pollingBusy = false;}
 }
 async function start(mode) {
-  if (peer || stream || sessionId) return;
+  if (peer || stream || sessionId || uploading) return;
+  if ($('identityPhoto').files.length && !selectedPhotoReady) {
+    message('Click Use this face photo before starting video.'); return;
+  }
   connectionToken = $('token').value.trim();
   if (connectionToken.length < 32) {message('Paste the private connection token first.'); return;}
   if (!window.isSecureContext || !window.RTCPeerConnection || !crypto.randomUUID) {
@@ -123,6 +131,8 @@ async function start(mode) {
     message('Checking cloud connection…');
     const config = await api('/config', {signal:controller.signal});
     if (myEpoch !== epoch) return;
+    if (config.identityRevision > 0 && !$('identityPhoto').files.length)
+      $('identityStatus').textContent = `Cloud is using an uploaded face photo (revision ${config.identityRevision}). Select and upload another photo to replace it.`;
     if (mode === 'camera' && !navigator.mediaDevices)
       throw new Error('Open this page using HTTPS or localhost to use video.');
     message(mode === 'camera' ? 'Waiting for your camera permission…' : 'Starting the consented demo image…');
@@ -148,7 +158,8 @@ async function start(mode) {
     await waitForIce(peer, controller.signal);
     if (myEpoch !== epoch) return;
     const answer = await api('/offer', {method:'POST', signal:controller.signal,
-      body:JSON.stringify({type:peer.localDescription.type,sdp:peer.localDescription.sdp,id:sessionId})});
+      body:JSON.stringify({type:peer.localDescription.type,sdp:peer.localDescription.sdp,id:sessionId,
+        swapEnabled:$('swapEnabled').checked,preserveMouth:$('preserveMouth').checked})});
     if (myEpoch !== epoch) return;
     if (answer.id !== sessionId || answer.type !== 'answer') throw new Error('Invalid cloud answer.');
     await peer.setRemoteDescription({type:answer.type,sdp:answer.sdp});
@@ -165,6 +176,45 @@ async function start(mode) {
 $('camera').addEventListener('click',()=>void start('camera'));
 $('demo').addEventListener('click',()=>void start('demo'));
 $('stop').addEventListener('click',()=>void stop());
+$('identityPhoto').addEventListener('change', () => {
+  const file = $('identityPhoto').files[0];
+  selectedPhotoReady = false;
+  $('identityPreview').hidden = true;
+  $('identityPreview').removeAttribute('src');
+  $('photoConsent').checked = false;
+  if (!file || !['image/jpeg','image/png'].includes(file.type) || file.size > 4*1024*1024) {
+    $('identityStatus').textContent = 'Choose a JPEG or PNG photo no larger than 4 MB.';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {if ($('identityPhoto').files[0] === file) {
+    $('identityPreview').src = reader.result; $('identityPreview').hidden = false;
+  }};
+  reader.readAsDataURL(file);
+  $('identityStatus').textContent = 'Photo selected locally. Click Use this face photo to upload it.';
+});
+$('uploadIdentity').addEventListener('click', async () => {
+  if (peer || stream || sessionId || uploading) return;
+  const file = $('identityPhoto').files[0], token = $('token').value.trim();
+  if (!file || !['image/jpeg','image/png'].includes(file.type) || file.size > 4*1024*1024) {
+    $('identityStatus').textContent = 'Choose a JPEG or PNG photo no larger than 4 MB.'; return;
+  }
+  if (!$('photoConsent').checked) { $('identityStatus').textContent = 'Confirm that you have permission to use this photo.'; return; }
+  if (token.length < 32) { $('identityStatus').textContent = 'Paste the connection token first.'; return; }
+  uploading = true; buttons(false);
+  $('identityStatus').textContent = 'Uploading and checking the face…';
+  try {
+    const response = await fetch('/identity', {method:'POST',cache:'no-store',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':file.type},body:file,
+      signal:AbortSignal.timeout(45000)});
+    if (!response.ok) throw new Error(response.status === 401 ? 'Connection token rejected.' :
+      response.status === 400 || response.status === 409 ? (await response.text()).slice(0,256) : `Photo upload failed (${response.status}).`);
+    const result = await response.json();
+    selectedPhotoReady = true;
+    $('identityStatus').textContent = `Face photo ready (revision ${result.identityRevision}). Start video to use it. It remains active until replaced or the cloud server stops.`;
+  } catch (error) { $('identityStatus').textContent = error.message; }
+  finally { uploading = false; buttons(false); }
+});
 $('fullscreen').addEventListener('click',()=>void $('output').requestFullscreen());
 window.addEventListener('pagehide', () => {
   if (sessionId && connectionToken) void fetch(`/session/${encodeURIComponent(sessionId)}`,

@@ -30,6 +30,18 @@ class Source(MediaStreamTrack):
 
 
 class TrackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bypass_returns_original_without_inference(self):
+        class UnusedWorker:
+            def process_frame(self, image):
+                raise AssertionError('Bypass called inference')
+        track = ProcessedVideoTrack(Source(), UnusedWorker(), swap_enabled=False)
+        try:
+            output = await track.recv()
+            self.assertEqual(int(output.to_ndarray(format='bgr24')[0,0,0]),40)
+            self.assertEqual(track.last_status,'bypass')
+            self.assertEqual(track.swapped_frames,0)
+        finally:
+            await track.aclose()
     async def test_backpressure_and_timestamps(self):
         release = threading.Event()
         class GatedWorker:
