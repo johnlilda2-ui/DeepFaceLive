@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "date": "2026-11-06",
+  "provenance": "Transcribed from executed Kaggle notebook comparison-summary.json and recovery output; raw reports and traces remain in the Kaggle output directory.",
+  "probe_commit": "e8aa4c177c9ef9759b8a68b589e762c2a7a85b30",
+  "recovery_commit": "d9b0d714b7bbc5f74f29161b318977bf31442603",
+  "gpu": "Tesla T4",
+  "reference": "Official upstream fictional AI reference 055330c0d988_000.jpg",
+  "motion": "BasketBall_I SMPL-X frames 00014 through 00099, stride 5",
+  "scope": "Offline cached full-body rendering; no live tracking, network or encoding included in benchmark",
+  "live_verified": false,
+  "kaggle_output_directory": "/kaggle/working/dfl-fullbody-evidence/framing-benchmark-20261106-080151",
+  "warmup_sequences": 1,
+  "frames_per_repeat": 18,
+  "repeats": 3,
+  "wide": {
+    "size": [
+      742,
+      420
+    ],
+    "median_fps": 4.306509462221756,
+    "repeat_fps": [
+      4.301543400081078,
+      4.325411068138113,
+      4.306509462221756
+    ],
+    "sequence_seconds": [
+      4.184544551999807,
+      4.161454187000118,
+      4.1797191339999245
+    ],
+    "cuda_compute_kernel_events": 21279,
+    "reconstruction_seconds": 7.3656151990001035
+  },
+  "calibrated": {
+    "size": [
+      364,
+      420
+    ],
+    "median_fps": 6.038902335078882,
+    "repeat_fps": [
+      6.046305132057101,
+      6.038902335078882,
+      6.026855329846067
+    ],
+    "sequence_seconds": [
+      2.97702474599987,
+      2.9806741360000615,
+      2.9866321679999146
+    ],
+    "cuda_compute_kernel_events": 21272,
+    "reconstruction_seconds": 6.415910621000194,
+    "normalized_box": [
+      0.25326145552560647,
+      0.19085714285714284,
+      0.6456603773584906,
+      1
+    ],
+    "framing_source": "Offline foreground union of 18 previously rendered frames, 8 percent padding; not live tracking",
+    "uniform_scale": 0.6007729127432517,
+    "horizontal_padding": 0.9496500017766323
+  },
+  "speedup_percent": 40.22730910158905,
+  "validation": {
+    "strict_weight_loads": true,
+    "all_model_parameters_cuda": true,
+    "repeat_pixel_mae_from_verified_runs": [
+      0,
+      0,
+      0
+    ],
+    "both_clips": {
+      "codec": "h264",
+      "fps": "6/1",
+      "duration_seconds": 3,
+      "decoded_frames": 18
+    },
+    "calibrated_frames_touching_three_pixel_border": [],
+    "edge_method": "Thresholded foreground bounds, not semantic segmentation",
+    "geometry_unit_tests_passed": 5,
+    "recovery_regression_exit": 0,
+    "recovery_regression_seconds": 18.909
+  },
+  "initial_profiled_runs_peak_memory": {
+    "allocated_bytes": 5819250688,
+    "reserved_bytes": 7025459200
+  },
+  "limitations": [
+    "Single reference and 18 prerecorded poses only",
+    "Face, hands and limb deformation remain coarse",
+    "Camera calibration sees the entire offline clip",
+    "Not live FPS or end-to-end latency",
+    "No lip sync, webcam retargeting, WebRTC avatar transport or OBS validation",
+    "Existing upstream model license restrictions still apply"
+  ]
+}

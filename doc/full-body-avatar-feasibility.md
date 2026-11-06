@@ -159,4 +159,48 @@ Actual outputs in the running Kaggle session:
 - `/kaggle/working/dfl-fullbody-evidence/motion-3seconds/comparison.png`
 - `/kaggle/working/dfl-fullbody-evidence/encoded-clip-audit.json`
 
-Next gate: improve camera framing and benchmark cached-avatar rendering without profiler overhead before committing to a live architecture. Then evaluate a public live pose/expression tracker and retargeting. Live webcam control, lip synchronization, temporal quality across long sessions, WebRTC avatar streaming and OBS output have not been implemented or verified by this test. The working face-swap transport remains separate.
+The framing and unprofiled benchmark gate is completed below. Next gate: improve measured model rendering speed and assess quality before integrating a public live pose/expression tracker and retargeting. Live webcam control, lip synchronization, temporal quality across long sessions, WebRTC avatar streaming and OBS output have not been implemented or verified by this test. The working face-swap transport remains separate.
+
+
+## Framing and fair cached-rendering benchmark — 2026-11-06
+
+Completed on Kaggle's free Tesla T4, using the same fictional reference, pinned model and 18 prerecorded poses as the preceding test. No paid resources were started. Probe source: `e8aa4c177c9ef9759b8a68b589e762c2a7a85b30`.
+
+| Measurement | Wide camera | Calibrated camera |
+| --- | ---: | ---: |
+| Output pixels | 742×420 | 364×420 |
+| Unprofiled repeat FPS | 4.302, 4.325, 4.307 | 6.046, 6.039, 6.027 |
+| Median cached rendering FPS | 4.307 | 6.039 |
+| CUDA compute-kernel events in separate verification | 21,279 | 21,272 |
+| Reference reconstruction seconds, excluded from benchmark | 7.366 | 6.416 |
+| Repeated output mean absolute difference from verified run | 0.0 | 0.0 |
+
+The calibrated camera improved measured throughput by **40.23%**. Both conditions use one unprofiled warmup sequence followed by three 18-frame repeats with CUDA synchronization. Wall time includes CPU processing and readback; reference reconstruction, encoding, network and live pose estimation are excluded. Prior profiled throughput is not a fair baseline for this comparison. Peak GPU allocated/reserved memory in the initial verification runs was 5,819,250,688 / 7,025,459,200 bytes; this is not a separately measured benchmark peak.
+
+Both H.264 clips decoded 18 frames at 6/1 FPS with duration 3.000000 seconds. Playback FPS and generation FPS are separate measurements.
+
+### Camera audit and fixes
+
+Added pure-math camera transforms and five passing geometry tests. A uniform crop scale plus horizontal padding preserves proportions when rounding the output width to the model's 14-pixel patch size. Intrinsics and pose parameters are transformed together; original camera consistency and unsupported skew are checked.
+
+The upstream no-mask renderer infers image size from twice the principal point, which is incorrect for an off-center crop. The probe now supplies an explicit canvas through the audited upstream size-carrier branch and checks the rendered dimensions. These arrays are not semantic segmentation masks.
+
+The normalized crop is [0.25326145552560647, 0.19085714285714284, 0.6456603773584906, 1.0], calculated offline from the prior 18-frame foreground union with 8% padding. This uses future frames and is not a live camera tracker. Thresholded foreground bounds for all 18 calibrated frames stayed inside a three-pixel border. Manual review of the reference/comparison and poses 1, 6, 12 and 18 confirms the figure is larger and the clothing remains recognizable; faces/hands and some limb shapes are still coarse.
+
+### Restart recovery audit
+
+The previous session lost temporary runtimes and assets. Added `scripts/restore_lhmpp_kaggle_runtime.py` to rebuild the isolated experimental environment from the retained pinned freeze and checksum manifest. Fixed an executable-permission problem by placing managed Python in /tmp, reused the retained matching pointops binary, cached compiled extension wheels, streamed large-file checksum validation, restricted manifest repository/path handling, and recreated the missing experimental pretrained-model asset symlink. The first attempted wide run failed on that missing link and remains in the output directory; the successful result is in `wide-retry`.
+
+Recovery regression at source `d9b0d714b7bbc5f74f29161b318977bf31442603` completed with exit 0 in 18.909 seconds, reusing the installed runtime and verified assets. This checks idempotent recovery in the current session; it does not prove every future Kaggle image is compatible.
+
+### Evidence and next gate
+
+- [Benchmark summary](evidence/lhmpp-t4-framing-summary.json) is a transcription of actual executed notebook outputs.
+- Raw reports, CUDA traces, clips and recovery log are retained under `/kaggle/working/dfl-fullbody-evidence/framing-benchmark-20261106-080151/`.
+- Successful condition directories: `wide-retry/` and `framed/`.
+- Comparison and pose strips: `framing-comparison.png`, `framed-motion-poses.png`.
+- Syntax validation and five geometry unit tests passed.
+
+![Verified Kaggle framing benchmark](evidence/lhmpp-t4-framing-proof.jpg)
+
+Next: investigate bounded rendering optimizations and validate image quality against this baseline before webcam retargeting. Approximately 6 FPS cached rendering is still insufficient evidence for a responsive complete live pipeline. Live lip synchronization, webcam pose/expression tracking, long-session stability, avatar WebRTC transport and OBS output remain unverified. Desktop and existing face-worker files were not changed.
