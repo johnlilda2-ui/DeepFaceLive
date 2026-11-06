@@ -230,3 +230,12 @@ The user reproduced the media failure on the restored face-mode preview. The dis
 A no-video allocation probe of the vendor-published Metered Open Relay static-auth endpoint returned zero relay candidates on both TLS/TCP 443 and TCP 80 from Kaggle. Do not enable or claim success for that public configuration. Account-specific TURN credentials are the next prerequisite for a forced-relay test, followed by a real Windows test. No paid GPU or relay was provisioned. Keep credentials out of git and chat; supply the existing --ice-config option through a private runtime file.
 
 The follow-up browser regression initially failed because the face checkbox label changed after Start; the established label has been restored. Its new CI result must be checked separately from the earlier passing GPU tests.
+
+
+## TURN verified on Kaggle — 6 November 2026
+
+The user created Metered account-specific relay credentials for the existing project. The no-card Global 500 MB trial is active; the 20 GB plan required a card and was not activated. Automatic paid service was not enabled. Private ICE settings are held in a mode-0600 file in the Kaggle runtime, not in git or notebook source/output.
+
+At 6a299a1f026bbf4560ba0f8a93217719d64ea237, scripts/test_signaling_gpu_roundtrip.py --ice-config <private-file> --force-relay --exercise-upload-mouth passed on the Tesla T4. Both SDP directions advertised relay candidates only; five 574×574 swapped frames and 14 incoming video RTP packets were received. Photo upload and mouth preservation changed output, and Stop released the session. Executed CUDA node counts: detector 2888, landmarks 915, swap 2486, identity 520. Report: /kaggle/working/dfl-turn-gpu-audit/run-6bu5rj6a/signaling-report.json; raw execution evidence is in that run's worker-a92t6_6t directory.
+
+This supersedes the account-credential blocker above. It proves real relayed GPU video between two peers on Kaggle, not external Windows reliability. The new live preview uses --mode face --relay-only and the private --ice-config file; the browser must show a relay candidate in Network path after connecting. Physical laptop reconnect testing remains pending. The original face checkbox label regression was fixed; GitHub Actions run 42164967463 passed.
