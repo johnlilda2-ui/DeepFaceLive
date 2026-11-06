@@ -1,0 +1,65 @@
+{
+  "code_commit": "728f5398ea69c341cce2de807378caba024838b6",
+  "scope": "fictional_open_hand_reference_offline_test",
+  "reference": {
+    "sha256": "fff33f6518ebc506238d3ea321726a8780448bfc83f4876a86dbe3756fff6eeb",
+    "size": [
+      1024,
+      1536
+    ],
+    "fictional": true,
+    "attached_privately": true
+  },
+  "motion": {
+    "reused_existing_validated_packets": true,
+    "frames": 180,
+    "fps": 12,
+    "duration_seconds": 15
+  },
+  "probe": {
+    "source_frame_ids": [
+      7,
+      24,
+      48
+    ],
+    "same_cache_neural_vs_gs": true,
+    "rendered_frames": 6,
+    "cuda_compute_events": 4671,
+    "execution_passed": true
+  },
+  "full_video": {
+    "gpu": "Tesla T4",
+    "rendered_frames": 180,
+    "cuda_compute_events": 170100,
+    "held_frames": [],
+    "edge_contacts": [],
+    "size": [
+      518,
+      630
+    ],
+    "duration_seconds": 15,
+    "bytes": 266357,
+    "setup_seconds": 42.45685023899932,
+    "profiled_render_seconds": 115.12831876400014,
+    "model_loads": 1,
+    "reconstructions": 1,
+    "cleanup_allocated_bytes": 6144,
+    "execution_passed": true
+  },
+  "visual_review": {
+    "selected_frame_ids": [
+      7,
+      24,
+      48,
+      90,
+      150
+    ],
+    "finger_contours_more_distinguishable_in_some_poses": true,
+    "distorted_finger_shapes_remain": true,
+    "anatomical_accuracy_verified": false,
+    "all_poses_quality_verified": false
+  },
+  "live_verified": false,
+  "lip_sync": false,
+  "paid_service_started": false
+}
