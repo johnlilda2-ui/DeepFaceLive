@@ -31,12 +31,15 @@ async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--transport-only', action='store_true')
     parser.add_argument('--exercise-upload-mouth', action='store_true', help='GPU identity upload and mouth-preserving return test.')
+    parser.add_argument('--portrait-runtime',help='Test the separate portrait GPU worker instead of face swapping.')
     parser.add_argument('--source-image')
     parser.add_argument('--target-image')
     parser.add_argument('--output-dir', default='artifacts/http-signaling')
     args = parser.parse_args()
     if args.transport_only and args.exercise_upload_mouth:
         parser.error('--exercise-upload-mouth requires the GPU worker')
+    if args.portrait_runtime and (args.transport_only or args.exercise_upload_mouth):
+        parser.error('Portrait mode requires GPU and does not use the face-swap mouth overlay.')
     root = Path(args.output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     run = Path(tempfile.mkdtemp(prefix='run-', dir=root))
@@ -46,8 +49,12 @@ async def main():
     else:
         if not args.source_image or not args.target_image:
             parser.error('GPU mode requires source and target images')
-        from headless_cloud_worker import HeadlessCloudWorker
-        worker = HeadlessCloudWorker(args.source_image, run, require_cuda=True)
+        if args.portrait_runtime:
+            from headless_portrait_worker import HeadlessPortraitWorker
+            worker = HeadlessPortraitWorker(args.source_image,run,args.portrait_runtime)
+        else:
+            from headless_cloud_worker import HeadlessCloudWorker
+            worker = HeadlessCloudWorker(args.source_image, run, require_cuda=True)
         target = cv2.imread(args.target_image)
         if target is None:
             raise ValueError('Cannot decode target image')
@@ -106,9 +113,10 @@ async def main():
                 frame = await asyncio.wait_for(remote.recv(), 30)
                 timestamps.append(float(frame.pts * frame.time_base))
                 received = frame.to_ndarray(format='bgr24')
-                assert received.shape == target.shape, 'Frame dimensions changed'
+                assert received.shape == expected.shape, 'Unexpected return canvas dimensions'
             assert all(b > a for a,b in zip(timestamps,timestamps[1:])), 'Nonmonotonic timestamps'
-            original_error = float(np.abs(received.astype(float)-target).mean())
+            comparison = cv2.resize(target,(received.shape[1],received.shape[0]))
+            original_error = float(np.abs(received.astype(float)-comparison).mean())
             processed_error = float(np.abs(received.astype(float)-expected).mean())
             assert processed_error+1 < original_error, 'Returned video did not match processing'
             response = await http.get(url+'/session/'+sid, headers=headers)
@@ -124,6 +132,7 @@ async def main():
             response = await http.get(url+'/session/'+sid, headers=headers)
             assert response.status == 404
             report = {'scope':'loopback HTTP signaling and WebRTC video', 'frames_received':5,
+                      'rendering_mode':'portrait' if args.portrait_runtime else 'face',
                       'packets_received':packets,'output_shape':list(received.shape),
                       'original_mae':original_error,'processed_reference_mae':processed_error,
                       'session':status,'stop_released_session':True,'gpu_verified':not args.transport_only,
@@ -137,7 +146,7 @@ async def main():
         source.stop()
         await runner.cleanup()  # GPU profiles must pass before success is recorded.
     if not args.transport_only:
-        report['execution_evidence'] = str(worker.profile_dir/'execution_evidence.json')
+        report['execution_evidence'] = str(worker.profile_dir/('portrait-evidence.json' if args.portrait_runtime else 'execution_evidence.json'))
     report['status'] = 'passed'
     (run/'signaling-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2),flush=True)

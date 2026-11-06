@@ -5,6 +5,7 @@ let polling, rendering, connectionDeadline, pollingBusy = false;
 let pollingFailureSince = null;
 let uploading = false;
 let selectedPhotoReady = false;
+let renderingMode = 'face';
 const POLL_RETRY_MS = 15000;
 const message = value => { $('status').textContent = value; };
 function buttons(running) {
@@ -12,6 +13,7 @@ function buttons(running) {
   $('stop').disabled = !running; $('token').disabled = running || uploading;
   for (const id of ['identityPhoto','photoConsent','uploadIdentity','swapEnabled','preserveMouth'])
     $(id).disabled = running || uploading;
+  if (renderingMode === 'portrait') $('preserveMouth').disabled = true;
 }
 async function api(path, options = {}) {
   const response = await fetch(path, {cache:'no-store', ...options,
@@ -78,7 +80,7 @@ async function poll(myEpoch) {
     const recovered = pollingFailureSince !== null;
     pollingFailureSince = null;
     $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped`;
-    $('faceResult').textContent = `${status.faceStatus || 'waiting'} · ${status.swappedFrames || 0} swapped · ${status.noFaceFrames || 0} no face`;
+    $('faceResult').textContent = `${status.faceStatus || 'waiting'} · ${status.swappedFrames || 0} swapped · ${status.avatarFrames || 0} animated · ${status.noFaceFrames || 0} no face`;
     if (status.error) throw new Error('Cloud video processing failed. Stop and check the cloud log.');
     if (peer.connectionState === 'connected') {
       const remaining = Math.max(0, Math.floor(status.expiresIn ?? 0));
@@ -131,6 +133,12 @@ async function start(mode) {
     message('Checking cloud connection…');
     const config = await api('/config', {signal:controller.signal});
     if (myEpoch !== epoch) return;
+    renderingMode = config.renderingMode || 'face';
+    if (renderingMode === 'portrait') {
+      $('preserveMouth').checked = false; $('preserveMouth').disabled = true;
+      $('swapLabel').textContent = 'Animate portrait (turn off before starting to compare the original cloud return)';
+      $('modeNotice').textContent = 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.';
+    }
     if (config.identityRevision > 0 && !$('identityPhoto').files.length)
       $('identityStatus').textContent = `Cloud is using an uploaded face photo (revision ${config.identityRevision}). Select and upload another photo to replace it.`;
     if (mode === 'camera' && !navigator.mediaDevices)

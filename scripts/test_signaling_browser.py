@@ -147,6 +147,19 @@ async def main():
             assert app[MANAGER].session is None, 'Persistent outage leaked server session'
             await page.unroute('**/session/*', persistent_outage)
             report['persistent_530_released_resources'] = True
+            app[MANAGER].worker.mode = 'portrait'
+            calibrations = []
+            app[MANAGER].worker.reset_motion = lambda:calibrations.append(True)
+            await page.get_by_label('Preserve my real mouth and lip movements',exact=False).check()
+            await page.get_by_role('button',name='Test demo',exact=True).click()
+            await wait_for_return(page)
+            assert await page.get_by_label('Preserve my real mouth and lip movements',exact=False).is_disabled()
+            assert not app[MANAGER].session['track'].preserve_mouth
+            assert calibrations
+            await page.get_by_text('Portrait avatar: the photo supplies hair',exact=False).wait_for()
+            await page.get_by_role('button',name='Stop',exact=True).click()
+            await page.get_by_role('status').filter(has_text='Camera and cloud session released.').wait_for()
+            report['portrait_ui_options_verified'] = True  # CPU UI only, not avatar synthesis.
             await page.set_viewport_size({'width':390,'height':844})
             assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile horizontal overflow'
             await page.screenshot(path=str(artifacts / 'mobile.png'), full_page=True)

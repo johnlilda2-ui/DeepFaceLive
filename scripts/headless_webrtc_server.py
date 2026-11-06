@@ -130,6 +130,10 @@ class SessionManager:
                 raise web.HTTPGone(text='This connection attempt was stopped. Start a new session.')
             if self.session is not None:
                 raise web.HTTPConflict(text='The worker already has an active session. Stop it first.')
+            if getattr(self.worker,'mode','face') == 'portrait' and preserve_mouth:
+                raise ValueError('Real-mouth overlay is unavailable in portrait mode.')
+            if hasattr(self.worker,'reset_motion'):
+                self.worker.reset_motion()
             pc = RTCPeerConnection(self.configuration)
             session = {'id': session_id or secrets.token_urlsafe(24), 'pc': pc, 'track': None,
                        'created': time.monotonic(), 'activity': time.monotonic(),
@@ -199,6 +203,7 @@ class SessionManager:
                     self.session_seconds - (time.monotonic() - session['created']))),
                 'faceStatus': track.last_status if track else 'waiting',
                 'swappedFrames': track.swapped_frames if track else 0,
+                'avatarFrames': track.avatar_frames if track else 0,
                 'noFaceFrames': track.no_face_frames if track else 0}
 
     async def watch(self):
@@ -269,6 +274,7 @@ def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=F
     async def config(request):
         return web.json_response({'iceServers': ice_servers, 'relayOnly': relay_only,
                                   'sessionSeconds': session_seconds, 'hasIceServers': bool(ice_servers),
+                                  'renderingMode':getattr(worker,'mode','face'),
                                   'identityRevision': manager.identity_revision})
 
     async def identity(request):
@@ -365,6 +371,8 @@ def main():
     parser.add_argument('--allowed-origin', action='append', default=[])
     parser.add_argument('--relay-only', action='store_true')
     parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
+    parser.add_argument('--mode', choices=['face','portrait'], default='face')
+    parser.add_argument('--portrait-runtime', help='Pinned LivePortrait runtime directory; required for portrait mode.')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -372,7 +380,16 @@ def main():
     if len(token) < 32:
         raise ValueError('Connection token must contain at least 32 characters.')
     ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
-    if args.diagnostic_cpu:
+    if args.mode == 'portrait' and args.diagnostic_cpu:
+        parser.error('Portrait mode requires GPU; diagnostic CPU mode cannot enable it.')
+    if args.mode == 'portrait':
+        if not args.portrait_runtime or not args.source_image:
+            parser.error('Portrait mode needs --portrait-runtime and --source-image.')
+        from headless_portrait_worker import HeadlessPortraitWorker
+        import cv2
+        worker = HeadlessPortraitWorker(args.source_image,args.evidence_dir,args.portrait_runtime)
+        worker.process_frame(cv2.imread(args.source_image))
+    elif args.diagnostic_cpu:
         class DiagnosticWorker:
             def set_identity(self, image):
                 pass  # Explicit CPU UI test only; never claims identity inference.

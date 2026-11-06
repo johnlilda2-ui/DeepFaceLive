@@ -25,6 +25,7 @@ class ProcessedVideoTrack(MediaStreamTrack):
         self.preserve_mouth = preserve_mouth
         self.last_status = 'waiting'
         self.swapped_frames = self.no_face_frames = 0
+        self.avatar_frames = 0
         self.pending = asyncio.Queue(maxsize=1)
         self.reader = None
         self.processing = None
@@ -68,7 +69,8 @@ class ProcessedVideoTrack(MediaStreamTrack):
             self.processed += 1
             self.last_status = status
             self.swapped_frames += status == 'swapped'
-            self.no_face_frames += status == 'no_face'
+            self.no_face_frames += status in ('no_face','avatar_no_face')
+            self.avatar_frames += status == 'avatar'
             output = VideoFrame.from_ndarray(result, format='bgr24')
             output.pts, output.time_base = frame.pts, frame.time_base
             return output

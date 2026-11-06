@@ -9,7 +9,8 @@
 <label class="check"><input id="photoConsent" type="checkbox"> I have permission to use this face photo.</label>
 <button id="uploadIdentity" class="secondary">Use this face photo</button>
 <p id="identityStatus">Using the default fictional face. Uploaded photos are decoded in cloud memory, not saved to disk. Stop video before changing the photo.</p></div>
-<label class="check"><input id="swapEnabled" type="checkbox" checked> Swap face (turn off before starting to compare the original cloud return)</label>
+<p id="modeNotice">Face-swap mode changes the face region; hair and body stay from your camera.</p>
+<label class="check"><input id="swapEnabled" type="checkbox" checked> <span id="swapLabel">Swap face (turn off before starting to compare the original cloud return)</span></label>
 <label class="check"><input id="preserveMouth" type="checkbox"> Preserve my real mouth and lip movements (may retain some of my appearance)</label>
 <div class="actions"><button id="camera">Start camera</button><button id="demo" class="secondary">Test demo</button><button id="stop" class="secondary" disabled>Stop</button></div>
 <p id="status" role="status" aria-live="polite">Ready. Your camera starts only when you press Start camera.</p>

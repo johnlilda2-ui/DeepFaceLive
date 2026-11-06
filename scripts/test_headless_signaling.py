@@ -120,6 +120,19 @@ class SignalingTests(AioHTTPTestCase):
             response = await self.client.post('/offer', json={'sdp':OFFER,'type':'offer',field:'yes'}, headers=HEADERS)
             self.assertEqual(response.status,400)
 
+    async def test_portrait_mode_calibration_and_mouth_option(self):
+        self.worker.mode = 'portrait'
+        resets = []
+        self.worker.reset_motion = lambda:resets.append(True)
+        response = await self.client.get('/config',headers=HEADERS)
+        self.assertEqual((await response.json())['renderingMode'],'portrait')
+        response = await self.client.post('/offer',headers=HEADERS,json={'sdp':OFFER,'type':'offer','preserveMouth':True})
+        self.assertEqual(response.status,400)
+        with patch.object(server,'RTCPeerConnection',FakePeer):
+            response = await self.client.post('/offer',headers=HEADERS,json={'sdp':OFFER,'type':'offer'})
+            self.assertEqual(response.status,200)
+        self.assertEqual(len(resets),1)
+
     async def test_single_slot_status_stop_and_readmission(self):
         with patch.object(server, 'RTCPeerConnection', FakePeer):
             data = {'sdp':OFFER,'type':'offer','id':'client-test-session-001'}
