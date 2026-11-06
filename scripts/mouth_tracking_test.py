@@ -13,6 +13,23 @@ from avatar_mouth_motion import JawOpening
 from headless_avatar_worker import validate_pose
 
 
+def head_crop(rgb, landmarks):
+    """Use already tracked body head points; a crop does not add detail."""
+    points = np.asarray(landmarks, dtype=float)
+    if points.shape != (33, 2) or not np.isfinite(points[:11]).all():
+        raise ValueError('Invalid body head landmarks')
+    h, w = rgb.shape[:2]
+    points = points[:11]*[w, h]
+    lo, hi = points.min(0), points.max(0)
+    center = (lo+hi)/2
+    extent = max(float((hi-lo).max())*2.0, 64.)
+    x0,y0 = np.maximum(0, np.floor(center-extent/2)).astype(int)
+    x1,y1 = np.minimum([w,h], np.ceil(center+extent/2)).astype(int)
+    if min(x1-x0,y1-y0) < 32:
+        raise ValueError('Head crop too small')
+    return cv2.resize(rgb[y0:y1,x0:x1], (512,512), interpolation=cv2.INTER_LINEAR)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('model', 'video', 'motion-jsonl', 'output-dir'):
@@ -55,6 +72,7 @@ def main():
                 if not ok:
                     raise ValueError('Source clip ended early')
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb = head_crop(rgb, record['landmarks_image'])
                 result = tracker.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), timestamp)
                 scores = {c.category_name:float(c.score) for c in result.face_blendshapes[0]} if result.face_blendshapes else {}
                 score = scores.get('jawOpen')
@@ -69,6 +87,7 @@ def main():
                   audio_lip_sync_verified=False, fine_lip_shapes_verified=False,
                   frames=len(refined), tracked_frames=len(observed), mediapipe=mp.__version__,
                   model_sha256=args.model_sha256,
+                  input_mode='body-landmark-guided head crop, resized to 512 square',
                   jaw_score_range=[min(observed), max(observed)] if observed else None,
                   jaw_radians_range=[min(r['jaw_radians'] for r in diagnostics), max(r['jaw_radians'] for r in diagnostics)],
                   tracking_passed=len(observed) >= 144,
