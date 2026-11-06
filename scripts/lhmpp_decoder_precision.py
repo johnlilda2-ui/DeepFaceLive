@@ -2,7 +2,7 @@
 from functools import wraps
 
 
-def enable_decoder_fp16(model, torch):
+def enable_decoder_fp16(model, torch, channels_last=False):
     decoder = model.neural_renderer
     if (type(decoder).__module__ != 'core.models.transformer_block.dpt_decoder'
             or type(decoder).__name__ != 'PatchDPT4DecoderOnly'):
@@ -11,9 +11,15 @@ def enable_decoder_fp16(model, torch):
         raise RuntimeError('Decoder weights must start as CUDA float32')
     if getattr(decoder, '_dfl_fp16_probe', False):
         raise RuntimeError('Decoder autocast is already enabled')
+    if channels_last:
+        decoder.to(memory_format=torch.channels_last)
+        convolutions = [m for m in decoder.modules() if isinstance(m, torch.nn.Conv2d)]
+        if not convolutions or not all(m.weight.is_contiguous(memory_format=torch.channels_last)
+                                       for m in convolutions):
+            raise RuntimeError('Decoder convolution memory format was not applied')
     original = decoder.forward
     stats = {'scope': 'neural_decoder_only', 'autocast_dtype': 'float16',
-             'weight_dtype': 'float32', 'calls': 0, 'observed_output_dtypes': [],
+             'weight_dtype': 'float32', 'channels_last': channels_last, 'calls': 0, 'observed_output_dtypes': [],
              'finite_outputs_checked': True}
 
     @wraps(original)
