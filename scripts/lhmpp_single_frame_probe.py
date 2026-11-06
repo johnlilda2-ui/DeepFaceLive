@@ -154,6 +154,14 @@ def main():
         params['img_size_wh'][...] = torch.tensor([width, height])
         params['betas'] = torch.from_numpy(betas).float().reshape(1, -1)
         motion['ori_size'] = (height, width)
+        # The upstream no-mask branch infers dimensions from 2*principal_point,
+        # which is invalid for a calibrated off-centre crop. Its canvas/mask
+        # branch accepts explicit dimensions; values are unused in that path.
+        # These full-canvas arrays are size carriers, not segmentation results.
+        motion['masks'] = [np.full((height, width), 255, dtype=np.uint8)
+                           for _ in selected]
+        motion['offset_list'] = [[1.0, 1.0, 0, 0] for _ in selected]
+        report['explicit_render_canvas'] = [height, width]
         tensor = torch.from_numpy(np.asarray(source).copy()).permute(2, 0, 1).float()[None] / 255
         report['stage'] = 'neural_inference'
         print('STAGE neural_inference', flush=True)
@@ -197,7 +205,8 @@ def main():
                       render_fps_excluding_reconstruction=args.frames / render_seconds,
                       peak_allocated_bytes=torch.cuda.max_memory_allocated(),
                       peak_reserved_bytes=torch.cuda.max_memory_reserved())
-        if not kernels or frames.shape[0] != args.frames or not np.isfinite(frames).all():
+        if (not kernels or frames.shape != (args.frames, height, width, 3)
+                or not np.isfinite(frames).all()):
             raise RuntimeError('Missing CUDA events or invalid frame output')
         if args.benchmark_repeats:
             # Reuse the identical reference reconstruction only within this
