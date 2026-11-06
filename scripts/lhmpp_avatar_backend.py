@@ -205,6 +205,12 @@ class LHMAvatarBackend:
             self.stats['allocated_after_gc'] = self.torch.cuda.memory_allocated()
             self.stats['model_python_released'] = model_ref is None or model_ref() is None
             self.torch.cuda.synchronize()
+            # Pinned torch 2.3/cu121 retains a per-handle cuBLAS workspace
+            # independently of model tensors. This process owns that workspace.
+            clear_workspace = getattr(self.torch._C, '_cuda_clearCublasWorkspaces', None)
+            if clear_workspace is not None:
+                clear_workspace()
+                self.stats['cublas_workspace_cleared'] = True
             self.torch.cuda.empty_cache()
             self.stats.update(allocated_after_close=self.torch.cuda.memory_allocated(),
                               reserved_after_close=self.torch.cuda.memory_reserved())
