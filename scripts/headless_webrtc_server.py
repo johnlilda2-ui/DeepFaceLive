@@ -64,11 +64,19 @@ class SessionManager:
         self.idle_seconds = idle_seconds
         self.watchdog = None
         self.stopping = False
+        self.closed_ids = {}
+
+    def _purge_closed_ids(self):
+        now = time.monotonic()
+        self.closed_ids = {key: expiry for key, expiry in self.closed_ids.items() if expiry > now}
 
     async def open(self, sdp, session_id=None):
         async with self.lock:
             if self.stopping:
                 raise web.HTTPServiceUnavailable(text='Server is shutting down.')
+            self._purge_closed_ids()
+            if session_id in self.closed_ids:
+                raise web.HTTPGone(text='This connection attempt was stopped. Start a new session.')
             if self.session is not None:
                 raise web.HTTPConflict(text='The worker already has an active session. Stop it first.')
             pc = RTCPeerConnection(self.configuration)
@@ -120,6 +128,12 @@ class SessionManager:
 
     async def close(self, session_id):
         async with self.lock:
+            # Stop may arrive before its HTTP offer. Remember bounded tombstones
+            # so a delayed offer cannot recreate an already-stopped session.
+            self._purge_closed_ids()
+            self.closed_ids[session_id] = time.monotonic() + 60
+            if len(self.closed_ids) > 128:
+                self.closed_ids.pop(next(iter(self.closed_ids)))
             if self.session is not None and secrets.compare_digest(self.session['id'].encode(), session_id.encode()):
                 await self._close_locked(self.session)
 

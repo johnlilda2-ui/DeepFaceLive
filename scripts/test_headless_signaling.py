@@ -105,8 +105,21 @@ class SignalingTests(AioHTTPTestCase):
             response = await self.client.delete('/session/'+answer['id'], headers=HEADERS)
             self.assertEqual(response.status, 204)
             self.assertIsNone(self.app[server.MANAGER].session)
+            data['id'] = 'client-test-session-002'
             response = await self.client.post('/offer', json=data, headers=HEADERS)
             self.assertEqual(response.status, 200)
+
+    async def test_stop_before_offer_prevents_a_late_orphan_session(self):
+        with patch.object(server, 'RTCPeerConnection', FakePeer):
+            sid = 'client-stopped-before-offer'
+            response = await self.client.delete('/session/'+sid, headers=HEADERS)
+            self.assertEqual(response.status, 204)
+            response = await self.client.post('/offer', json={'sdp':OFFER,'type':'offer','id':sid}, headers=HEADERS)
+            self.assertEqual(response.status, 410)
+            self.assertIsNone(self.app[server.MANAGER].session)
+            for index in range(150):
+                await self.app[server.MANAGER].close(f'stopped-session-{index}')
+            self.assertLessEqual(len(self.app[server.MANAGER].closed_ids),128)
 
     async def test_idle_session_releases_slot(self):
         with patch.object(server, 'RTCPeerConnection', FakePeer):

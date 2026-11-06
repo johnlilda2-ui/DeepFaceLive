@@ -11,6 +11,7 @@ The browser page is served by `scripts/headless_webrtc_server.py`. It provides:
 - One GPU session at a time; malformed offers, audio/data tracks, unauthorized
   origins and oversized request bodies are rejected.
 - Stop, reconnect, idle cleanup, and a ten-minute maximum session.
+  A stopped connection ID cannot be resurrected by a delayed offer.
 - Incoming frame counts, cloud processing counts, stale-frame drops, and selected
   ICE candidate types/round-trip time.
 - Optional STUN/TURN configuration and browser relay-only mode.
@@ -107,3 +108,11 @@ configuration to the browser; no TURN credentials are embedded in the HTML or JS
 Do not assume remote connectivity from local test results. Do not rent RunPod or
 another paid GPU without user approval. Stop the Kaggle session after testing to
 release free GPU quota. OBS integration follows a successful physical laptop test.
+
+
+## Final lifecycle audit
+
+An additional regression covers Stop arriving before a delayed offer. The server
+retains a bounded, expiring set of stopped request IDs and rejects those late
+offers instead of creating orphan sessions. Reconnect uses a fresh request ID.
+This adds an eighth signaling regression to the original 24-test suite.
