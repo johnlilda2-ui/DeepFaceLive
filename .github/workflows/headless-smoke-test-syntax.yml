@@ -6,6 +6,11 @@ on:
       - experiment/cloud-headless-webrtc
     paths:
       - "scripts/headless_inference_smoke_test.py"
+      - "scripts/headless_webrtc_server.py"
+      - "scripts/test_headless_signaling.py"
+      - "scripts/test_signaling_gpu_roundtrip.py"
+      - "scripts/test_signaling_browser.py"
+      - "scripts/webrtc_client.*"
       - "scripts/headless_cloud_worker.py"
       - "scripts/prepare_headless_env.py"
       - "scripts/test_prepare_headless_env.py"
@@ -30,6 +35,14 @@ jobs:
         with:
           sparse-checkout: |
             scripts/headless_inference_smoke_test.py
+            scripts/headless_webrtc_server.py
+            scripts/test_headless_signaling.py
+            scripts/test_signaling_gpu_roundtrip.py
+            scripts/test_signaling_browser.py
+            scripts/webrtc_client.html
+            scripts/webrtc_client.js
+            scripts/webrtc_client.css
+            doc/celebs/Millie_Park/Millie_Park.png
             scripts/headless_cloud_worker.py
             scripts/prepare_headless_env.py
             scripts/test_prepare_headless_env.py
@@ -60,3 +73,20 @@ jobs:
         run: python scripts/test_webrtc_gpu_roundtrip.py --transport-only --frames 5
       - name: Test restored environment repair
         run: python -m unittest discover -s scripts -p test_prepare_headless_env.py -v
+      - name: Install signaling and browser-test dependencies
+        run: python -m pip install aiohttp==3.13.3 playwright==1.58.0
+      - name: Test HTTP authorization and lifecycle
+        run: python -m unittest discover -s scripts -p test_headless_signaling.py -v
+      - name: Test HTTP signaling with actual WebRTC packets
+        run: python scripts/test_signaling_gpu_roundtrip.py --transport-only
+      - name: Install test Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Test browser demo, synthetic camera, Stop and reconnect
+        run: python scripts/test_signaling_browser.py
+      - name: Retain browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signaling-browser-evidence
+          path: artifacts/signaling-browser/
+          if-no-files-found: ignore

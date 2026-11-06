@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Browser integration with synthetic media and CPU inversion, never real webcam.
+
+Run in CI with Playwright Chromium installed. Tests the shipped browser UI,
+actual HTTP signaling and actual WebRTC return video. Does not claim GPU or
+external-network verification.
+"""
+import asyncio
+import json
+from pathlib import Path
+
+from aiohttp import web
+from playwright.async_api import async_playwright
+
+from headless_webrtc_server import create_app, MANAGER
+
+TOKEN = 'ci-only-not-a-real-credential-' + 'x' * 32
+
+
+class DiagnosticWorker:
+    def process_frame(self, image):
+        return 255 - image, 'browser_diagnostic'
+    def close(self):
+        pass
+
+
+async def wait_for_return(page):
+    await page.wait_for_function("""() => document.querySelector('#output').videoWidth > 0
+        && Number(document.querySelector('#frames').textContent) >= 3""", timeout=45000)
+    return await page.evaluate("""() => {
+      const input = document.querySelector('#local'), output = document.querySelector('#output');
+      function pixels(video) { const c=document.createElement('canvas'); c.width=160; c.height=120;
+        const x=c.getContext('2d'); x.drawImage(video,0,0,160,120); return x.getImageData(0,0,160,120).data; }
+      const a=pixels(input), b=pixels(output); let error=0, unchanged=0, count=0;
+      for(let i=0;i<a.length;i++) if(i%4!==3){error+=Math.abs(b[i]-(255-a[i])); unchanged+=Math.abs(b[i]-a[i]); count++;}
+      return {frames:Number(document.querySelector('#frames').textContent),
+        outputWidth:output.videoWidth,outputHeight:output.videoHeight,
+        inversionMae:error/count,originalMae:unchanged/count,
+        connection:document.querySelector('#connection').textContent};
+    }""")
+
+
+async def main():
+    artifacts = Path('artifacts/signaling-browser')
+    artifacts.mkdir(parents=True, exist_ok=True)
+    app = create_app(DiagnosticWorker(), TOKEN, idle_seconds=60)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '127.0.0.1', 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    url = f'http://127.0.0.1:{port}'
+    report = {'scope':'Chromium synthetic camera and demo over local HTTP/WebRTC',
+              'gpu_verified':False, 'real_webcam_tested':False, 'sessions':[]}
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(args=[
+                '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'])
+            context = await browser.new_context(viewport={'width':1280,'height':900}, permissions=['camera'])
+            page = await context.new_page()
+            page_errors = []
+            page.on('pageerror', lambda error: page_errors.append(str(error)))
+            await page.goto(url)
+            await page.get_by_label('Connection token', exact=True).fill('wrong-token-that-is-long-enough-for-validation')
+            await page.get_by_role('button', name='Test demo', exact=True).click()
+            await page.get_by_role('status').filter(has_text='Connection token rejected.').wait_for()
+            assert app[MANAGER].session is None, 'Unauthorized browser obtained a session'
+            await page.get_by_label('Connection token', exact=True).fill(TOKEN)
+            for mode in ('Test demo', 'Start camera'):
+                await page.get_by_role('button', name=mode, exact=True).click()
+                stats = await wait_for_return(page)
+                assert stats['connection'] == 'connected', stats
+                assert stats['inversionMae'] < 20 and stats['inversionMae'] < stats['originalMae'], stats
+                await page.evaluate("window.savedTestTracks = document.querySelector('#local').srcObject.getTracks()")
+                audio_tracks = await page.evaluate("document.querySelector('#local').srcObject.getAudioTracks().length")
+                assert audio_tracks == 0, 'Audio was captured'
+                await page.screenshot(path=str(artifacts / ('demo.png' if mode == 'Test demo' else 'synthetic-camera.png')))
+                await page.get_by_role('button', name='Stop', exact=True).click()
+                await page.get_by_role('status').filter(has_text='Camera and cloud session released.').wait_for(timeout=10000)
+                assert await page.evaluate("window.savedTestTracks.every(t=>t.readyState==='ended')"), 'Camera tracks leaked'
+                assert app[MANAGER].session is None, 'Server slot leaked after Stop'
+                report['sessions'].append({'mode':mode,**stats,'audio_tracks':audio_tracks,'stop_released_resources':True})
+            await page.set_viewport_size({'width':390,'height':844})
+            assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile horizontal overflow'
+            await page.screenshot(path=str(artifacts / 'mobile.png'), full_page=True)
+            assert not page_errors, page_errors
+            await browser.close()
+        report['status'] = 'passed'
+        (artifacts / 'browser-report.json').write_text(json.dumps(report, indent=2)+'\n')
+        print(json.dumps(report, indent=2), flush=True)
+    finally:
+        await runner.cleanup()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

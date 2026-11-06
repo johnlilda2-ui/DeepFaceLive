@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeepFaceLive Cloud Preview</title><link rel="stylesheet" href="/client.css"><script src="/client.js" defer></script></head>
+<body><main>
+<header><span class="eyebrow">DEEPFACELIVE · CLOUD EXPERIMENT</span><h1>Your camera. Cloud processing.</h1><p>Use your own or consented faces. Audio is never requested.</p></header>
+<section class="controls" aria-label="Connection controls">
+<label for="token">Connection token</label><input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the private token from your cloud session">
+<div class="actions"><button id="camera">Start camera</button><button id="demo" class="secondary">Test demo</button><button id="stop" class="secondary" disabled>Stop</button></div>
+<p id="status" role="status" aria-live="polite">Ready. Your camera starts only when you press Start camera.</p>
+</section>
+<section class="previews" aria-label="Video previews"><article><h2>Local input</h2><video id="local" autoplay muted playsinline></video></article><article><div class="video-heading"><h2>Cloud return</h2><button id="fullscreen" class="small secondary" disabled>Fullscreen output</button></div><video id="output" autoplay muted playsinline></video></article></section>
+<section class="diagnostics" aria-label="Connection diagnostics"><div><span>Connection</span><strong id="connection">Not connected</strong></div><div><span>Received frames</span><strong id="frames">0</strong></div><div><span>Cloud processing</span><strong id="processing">0 frames</strong></div><div><span>Network path</span><strong id="network">Not selected</strong></div></section>
+<p class="footnote">Keep this tab open while connected. Stop releases the camera and the cloud session. Tokens are kept in this tab only.</p>
+<canvas id="demoCanvas" width="640" height="480" hidden></canvas>
+</main></body></html>

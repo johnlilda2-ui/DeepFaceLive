@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""Authenticated, single-session signaling for the existing cloud GPU worker.
+
+Default bind is loopback. Public HTTPS exposure and TURN provisioning are separate
+operator steps. No tunnel, paid service, camera, or microphone is started here.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import logging
+import os
+import re
+from pathlib import Path
+import secrets
+import time
+
+from aiohttp import web
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+from aiortc.sdp import SessionDescription
+
+from headless_webrtc_track import ProcessedVideoTrack
+
+LOG = logging.getLogger('headless-signaling')
+MANAGER = web.AppKey('manager', object)
+
+
+def validate_ice_servers(value):
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError('ICE configuration must be a list of at most ten servers.')
+    result = []
+    for server in value:
+        if not isinstance(server, dict) or set(server) - {'urls', 'username', 'credential'}:
+            raise ValueError('Invalid ICE server fields.')
+        urls = server.get('urls')
+        if isinstance(urls, str):
+            urls = [urls]
+        if not isinstance(urls, list) or not urls or len(urls) > 10:
+            raise ValueError('ICE server urls must be a nonempty string or list.')
+        if not all(isinstance(url, str) and len(url) < 2048 and
+                   url.startswith(('stun:', 'stuns:', 'turn:', 'turns:')) for url in urls):
+            raise ValueError('Invalid STUN/TURN URL.')
+        clean = {'urls': urls}
+        for field in ('username', 'credential'):
+            if field in server:
+                if not isinstance(server[field], str) or len(server[field]) > 4096:
+                    raise ValueError('Invalid TURN credential.')
+                clean[field] = server[field]
+        if any(url.startswith(('turn:', 'turns:')) for url in urls):
+            if not clean.get('username') or not clean.get('credential'):
+                raise ValueError('TURN needs a username and credential.')
+        result.append(clean)
+    return result
+
+
+class SessionManager:
+    def __init__(self, worker, ice_servers, session_seconds=600, idle_seconds=30):
+        self.worker = worker
+        self.configuration = RTCConfiguration(iceServers=[RTCIceServer(**s) for s in ice_servers])
+        self.session = None
+        self.lock = asyncio.Lock()
+        self.session_seconds = session_seconds
+        self.idle_seconds = idle_seconds
+        self.watchdog = None
+        self.stopping = False
+
+    async def open(self, sdp, session_id=None):
+        async with self.lock:
+            if self.stopping:
+                raise web.HTTPServiceUnavailable(text='Server is shutting down.')
+            if self.session is not None:
+                raise web.HTTPConflict(text='The worker already has an active session. Stop it first.')
+            pc = RTCPeerConnection(self.configuration)
+            session = {'id': session_id or secrets.token_urlsafe(24), 'pc': pc, 'track': None,
+                       'created': time.monotonic(), 'activity': time.monotonic(),
+                       'captured': 0, 'closing': False}
+            self.session = session
+
+            @pc.on('track')
+            def on_track(track):
+                if track.kind != 'video' or session['track'] is not None:
+                    track.stop()
+                    return
+                processed = ProcessedVideoTrack(track, self.worker)
+                session['track'] = processed
+                pc.addTrack(processed)
+
+            @pc.on('connectionstatechange')
+            async def on_state():
+                if pc.connectionState in ('failed', 'closed'):
+                    await self.close(session['id'])
+
+            try:
+                async with asyncio.timeout(25):
+                    await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type='offer'))
+                    if session['track'] is None:
+                        raise ValueError('No incoming video track was offered.')
+                    await pc.setLocalDescription(await pc.createAnswer())
+                return {'id': session['id'], 'sdp': pc.localDescription.sdp,
+                        'type': pc.localDescription.type}
+            except BaseException:
+                # Keep admission locked until all prior inference is drained.
+                await self._close_locked(session)
+                raise
+
+    async def _close_locked(self, session):
+        if session['closing']:
+            return
+        session['closing'] = True
+        try:
+            try:
+                await session['pc'].close()
+            finally:
+                if session['track'] is not None:
+                    await session['track'].aclose()
+        finally:
+            if self.session is session:
+                self.session = None
+
+    async def close(self, session_id):
+        async with self.lock:
+            if self.session is not None and secrets.compare_digest(self.session['id'].encode(), session_id.encode()):
+                await self._close_locked(self.session)
+
+    def status(self, session_id):
+        session = self.session
+        if session is None or not secrets.compare_digest(session['id'].encode(), session_id.encode()):
+            raise web.HTTPNotFound(text='Session ended or does not exist.')
+        track = session['track']
+        return {'state': session['pc'].connectionState, 'iceState': session['pc'].iceConnectionState,
+                'processed': track.processed if track else 0, 'dropped': track.dropped if track else 0,
+                'error': bool(track and track.error), 'expiresIn': max(0, int(
+                    self.session_seconds - (time.monotonic() - session['created'])))}
+
+    async def watch(self):
+        while True:
+            await asyncio.sleep(1)
+            session = self.session
+            if session is None:
+                continue
+            now = time.monotonic()
+            track = session['track']
+            if track and track.captured != session['captured']:
+                session['captured'] = track.captured
+                session['activity'] = now
+            if (now - session['created'] > self.session_seconds or
+                    now - session['activity'] > self.idle_seconds or
+                    (track and track.error is not None)):
+                try:
+                    await self.close(session['id'])
+                except Exception:
+                    LOG.exception('Session cleanup failed')
+
+
+def create_app(worker, token, ice_servers=None, allowed_origins=(), relay_only=False,
+               session_seconds=600, idle_seconds=30):
+    if not isinstance(token, str) or len(token) < 32:
+        raise ValueError('Use a signaling token of at least 32 characters.')
+    ice_servers = validate_ice_servers(ice_servers or [])
+    if relay_only and not any(url.startswith(('turn:', 'turns:'))
+                              for s in ice_servers for url in s['urls']):
+        raise ValueError('Relay-only mode requires a configured TURN server.')
+    manager = SessionManager(worker, ice_servers, session_seconds, idle_seconds)
+    allowed_origins = set(allowed_origins)
+
+    @web.middleware
+    async def protect(request, handler):
+        if request.path != '/' and request.path not in ('/client.js', '/client.css', '/demo.png'):
+            supplied = request.headers.get('Authorization', '')
+            if not secrets.compare_digest(supplied.encode(), ('Bearer ' + token).encode()):
+                raise web.HTTPUnauthorized(text='A valid connection token is required.')
+            origin = request.headers.get('Origin')
+            same_origin = f'{request.scheme}://{request.host}'
+            if origin and origin != same_origin and origin not in allowed_origins:
+                raise web.HTTPForbidden(text='Origin is not allowed.')
+        response = await handler(request)
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+            "img-src 'self' data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'")
+        response.headers['Permissions-Policy'] = 'camera=(self), microphone=()'
+        return response
+
+    app = web.Application(middlewares=[protect], client_max_size=65536)
+    app[MANAGER] = manager
+
+    async def asset(request):
+        files = {'/': ('webrtc_client.html', 'text/html'),
+                 '/client.js': ('webrtc_client.js', 'application/javascript'),
+                 '/client.css': ('webrtc_client.css', 'text/css')}
+        filename, mime = files[request.path]
+        return web.Response(text=(Path(__file__).parent / filename).read_text(), content_type=mime)
+
+    async def demo(request):
+        path = Path(__file__).resolve().parents[1] / 'doc/celebs/Millie_Park/Millie_Park.png'
+        return web.FileResponse(path)
+
+    async def config(request):
+        return web.json_response({'iceServers': ice_servers, 'relayOnly': relay_only,
+                                  'sessionSeconds': session_seconds, 'hasIceServers': bool(ice_servers)})
+
+    async def offer(request):
+        try:
+            data = await request.json()
+            if (not isinstance(data, dict) or set(data) - {'sdp', 'type', 'id'} or not {'sdp', 'type'} <= set(data) or
+                    data['type'] != 'offer' or not isinstance(data['sdp'], str)):
+                raise ValueError('Expected a video SDP offer.')
+            if 'id' in data and (not isinstance(data['id'], str) or
+                    re.fullmatch(r'[A-Za-z0-9_-]{16,64}', data['id']) is None):
+                raise ValueError('Invalid session id.')
+            parsed = SessionDescription.parse(data['sdp'])
+            if (len(parsed.media) != 1 or parsed.media[0].kind != 'video' or
+                    parsed.media[0].direction != 'sendrecv'):
+                raise ValueError('Offer exactly one outgoing video track and no audio/data tracks.')
+            answer = await manager.open(data['sdp'], data.get('id'))
+            return web.json_response(answer)
+        except web.HTTPException:
+            raise
+        except (ValueError, KeyError, IndexError, TypeError, AssertionError):
+            raise web.HTTPBadRequest(text='Invalid video offer.')
+        except TimeoutError:
+            raise web.HTTPGatewayTimeout(text='ICE negotiation timed out. Check STUN/TURN configuration.')
+
+    async def status(request):
+        return web.json_response(manager.status(request.match_info['id']))
+
+    async def stop(request):
+        await manager.close(request.match_info['id'])
+        return web.Response(status=204)
+
+    app.router.add_get('/', asset)
+    app.router.add_get('/client.js', asset)
+    app.router.add_get('/client.css', asset)
+    app.router.add_get('/demo.png', demo)
+    app.router.add_get('/config', config)
+    app.router.add_post('/offer', offer)
+    app.router.add_get('/session/{id}', status)
+    app.router.add_delete('/session/{id}', stop)
+
+    async def startup(app):
+        manager.watchdog = asyncio.create_task(manager.watch())
+
+    async def cleanup(app):
+        manager.stopping = True
+        manager.watchdog.cancel()
+        await asyncio.gather(manager.watchdog, return_exceptions=True)
+        try:
+            if manager.session:
+                await manager.close(manager.session['id'])
+        finally:
+            await asyncio.to_thread(worker.close)
+
+    app.on_startup.append(startup)
+    app.on_cleanup.append(cleanup)
+    return app
+
+
+def load_token(path):
+    path = Path(path)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        token = path.read_text().strip()
+    else:
+        token = secrets.token_urlsafe(32)
+        with os.fdopen(fd, 'w') as handle:
+            handle.write(token + '\n')
+    if len(token) < 32:
+        raise ValueError('Connection token file is invalid.')
+    return token
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source-image')
+    parser.add_argument('--bind', default='127.0.0.1')
+    parser.add_argument('--port', type=int, default=8080)
+    parser.add_argument('--token-file', default='/tmp/dfl-signaling-token')
+    parser.add_argument('--ice-config', help='JSON file containing an iceServers list.')
+    parser.add_argument('--allowed-origin', action='append', default=[])
+    parser.add_argument('--relay-only', action='store_true')
+    parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
+    parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    token = load_token(args.token_file)
+    ice_servers = validate_ice_servers(json.loads(Path(args.ice_config).read_text()) if args.ice_config else [])
+    if args.diagnostic_cpu:
+        class DiagnosticWorker:
+            def process_frame(self, frame):
+                return 255 - frame, 'diagnostic'
+            def close(self):
+                pass
+        worker = DiagnosticWorker()
+    else:
+        if not args.source_image:
+            parser.error('--source-image is required for GPU face swapping')
+        from headless_cloud_worker import HeadlessCloudWorker
+        import cv2
+        worker = HeadlessCloudWorker(args.source_image, args.evidence_dir, require_cuda=True)
+        image = cv2.imread(args.source_image)
+        worker.process_frame(image)  # Warm the complete CUDA path before accepting video.
+    app = create_app(worker, token, ice_servers, args.allowed_origin, args.relay_only)
+    LOG.info('Connection token is in %s (not printed). Diagnostic CPU mode: %s', args.token_file, args.diagnostic_cpu)
+    web.run_app(app, host=args.bind, port=args.port, access_log=None)
+
+
+if __name__ == '__main__':
+    main()
