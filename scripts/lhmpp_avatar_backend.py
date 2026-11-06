@@ -69,28 +69,29 @@ class LHMAvatarBackend:
             config = json.loads((model_dir / 'config.json').read_text())
             # Published inference weights omit the training-only identity loss net.
             config['use_face_id'] = False
-            model = ModelHumanA4OLRM(**config)
-            self.model = model
+            # Some dependency imports retain this constructor frame. Avoid a
+            # second local model reference that would survive self.model cleanup.
+            self.model = ModelHumanA4OLRM(**config)
             weights = load_file(str(model_dir / 'model.safetensors'), device='cpu')
             prefix = 'neural_renderer.transformer_block.'
-            if type(model.neural_renderer) is not PatchDPT4DecoderOnly or any(
+            if type(self.model.neural_renderer) is not PatchDPT4DecoderOnly or any(
                     k.startswith(prefix) for k in weights):
                 raise RuntimeError('Unexpected inference checkpoint/decoder layout')
             # This exact decoder uses patchify/chunk/dense_predictor; the
             # inherited transformer branch is unused and absent from the weights.
-            model.neural_renderer.transformer_block = torch.nn.ModuleList()
-            model.load_state_dict(weights, strict=True)
+            self.model.neural_renderer.transformer_block = torch.nn.ModuleList()
+            self.model.load_state_dict(weights, strict=True)
             del weights
             gc.collect()
-            model.eval()
-            model.to('cuda')
-            if not all(p.is_cuda for p in model.parameters()):
+            self.model.eval()
+            self.model.to('cuda')
+            if not all(p.is_cuda for p in self.model.parameters()):
                 raise RuntimeError('All model parameters must be on CUDA')
             from lhmpp_t4_attention import enable_t4_attention
-            self.stats['attention_adapter'] = enable_t4_attention(model)
+            self.stats['attention_adapter'] = enable_t4_attention(self.model)
             if optimized_decoder:
                 from lhmpp_decoder_precision import enable_decoder_fp16
-                self.stats['decoder_precision'] = enable_decoder_fp16(model, torch, True)
+                self.stats['decoder_precision'] = enable_decoder_fp16(self.model, torch, True)
             else:
                 def check_decoder_output(_module, _inputs, values):
                     for value in values:
@@ -202,9 +203,6 @@ class LHMAvatarBackend:
         gc.collect()
         if self.torch is not None and self.torch.cuda.is_initialized():
             self.stats['allocated_after_gc'] = self.torch.cuda.memory_allocated()
-            # The dedicated process owns its runtime/compiler caches too.
-            self.torch._dynamo.reset()
-            gc.collect()
             self.stats['model_python_released'] = model_ref is None or model_ref() is None
             self.torch.cuda.synchronize()
             self.torch.cuda.empty_cache()
