@@ -55,11 +55,12 @@ class PriorPathTests(unittest.TestCase):
         self.link.touch()
         backup = self.root / 'pretrained_models.kaggle-empty-backup'
         backup.write_bytes(b'keep')
-        with self.assertRaises(RuntimeError):
-            ensure_prior_link(self.link, self.target)
-        self.assertFalse(self.link.is_symlink())
+        ensure_prior_link(self.link, self.target)
+        self.assertEqual(self.link.resolve(),self.target)
         self.assertEqual(backup.read_bytes(), b'keep')
+        self.assertEqual((self.root/'pretrained_models.kaggle-empty-backup-1').read_bytes(),b'')
 
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -1,0 +1,224 @@
+{
+  "scope": "executed_free_kaggle_t4_four_stage_engineering_checks",
+  "gpu_test_code_commit": "9043ee5e97614b3e68adacddb4121fd0a96f9aaf",
+  "lip_basis_fit": {
+    "relative_errors": [
+      0.24307098794592014,
+      0.36009065117712424,
+      0.5996548126963138,
+      0.5923561624877672,
+      0.3010938774721385,
+      0.311911892377176,
+      0.558398733657143,
+      0.38788728830853775,
+      0.43071799987973036,
+      0.4589171198478888,
+      0.6330753862740108,
+      0.6577855556604176
+    ],
+    "accepted": [
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ],
+    "maximum_relative_error": 0.45,
+    "ridge": 1.780584853155419e-9,
+    "names": [
+      "mouthPucker",
+      "mouthFunnel",
+      "mouthSmileLeft",
+      "mouthSmileRight",
+      "mouthPressLeft",
+      "mouthPressRight",
+      "mouthRollLower",
+      "mouthRollUpper",
+      "mouthUpperUpLeft",
+      "mouthUpperUpRight",
+      "mouthLowerDownLeft",
+      "mouthLowerDownRight"
+    ],
+    "flame_sha256": "efcd14cc4a69f3a3d9af8ded80146b5b6b50df3bd74cf69108213b144eba725b",
+    "arkit_sha256": "33f4b588c1fadd227ce668c14b484619f40e7a08c25fdf20b0bc7b28212f43ca",
+    "order_sha256": "b8b19fa494b3558c0967128332151aa85cb182d85b978c52e69724855b4956c5",
+    "visual_quality_verified": false,
+    "private_derived_asset": true
+  },
+  "transport": {
+    "scope": "actual_t4_lip_and_loopback_avatar_transport",
+    "passed": true,
+    "public_network_verified": false,
+    "windows_obs_verified": false,
+    "lip_sync_verified": false,
+    "hand_reconstruction_quality_verified": false,
+    "lip_changes": [
+      {
+        "label": "Fitted pucker",
+        "changed_pixels": 638
+      },
+      {
+        "label": "Fitted funnel",
+        "changed_pixels": 596
+      },
+      {
+        "label": "Fitted press",
+        "changed_pixels": 490
+      }
+    ],
+    "cuda_compute_events": 945,
+    "sessions": [
+      {
+        "attempt": 1,
+        "received_frames": 267,
+        "first_return_timestamps_seconds": [
+          0,
+          0.6666666666666666,
+          1
+        ],
+        "last_return_timestamp_seconds": 89.58331111111112,
+        "nonblank_frames": 267,
+        "wall_seconds": 90.15765012599968,
+        "shapes": [
+          [
+            630,
+            518,
+            3
+          ]
+        ],
+        "server_status": {
+          "state": "connected",
+          "iceState": "completed",
+          "processed": 268,
+          "dropped": 816,
+          "error": false,
+          "expiresIn": 29,
+          "faceStatus": "avatar",
+          "swappedFrames": 0,
+          "avatarFrames": 268,
+          "noFaceFrames": 0
+        },
+        "queue_bound": 1,
+        "gpu_next_frame_id": 272
+      },
+      {
+        "attempt": 2,
+        "received_frames": 261,
+        "first_return_timestamps_seconds": [
+          0,
+          0.5833111111111111,
+          1
+        ],
+        "last_return_timestamp_seconds": 89.66666666666667,
+        "nonblank_frames": 261,
+        "wall_seconds": 90.16010115599966,
+        "shapes": [
+          [
+            630,
+            518,
+            3
+          ]
+        ],
+        "server_status": {
+          "state": "connected",
+          "iceState": "completed",
+          "processed": 262,
+          "dropped": 822,
+          "error": false,
+          "expiresIn": 29,
+          "faceStatus": "avatar",
+          "swappedFrames": 0,
+          "avatarFrames": 262,
+          "noFaceFrames": 0
+        },
+        "queue_bound": 1,
+        "gpu_next_frame_id": 535
+      }
+    ],
+    "worker_stats": {
+      "rendered": 532,
+      "tracking_missing": 0,
+      "last_tracking": {
+        "body": true,
+        "face": true,
+        "hands": {
+          "left": "tracked",
+          "right": "missing"
+        }
+      },
+      "live_quality_verified": false
+    },
+    "saved_clip_hand_guard": {
+      "left": {
+        "accepted": 159,
+        "rejected": 10,
+        "missing": 11
+      },
+      "right": {
+        "accepted": 172,
+        "rejected": 1,
+        "missing": 7
+      }
+    },
+    "gpu_child_exit_code": 0
+  },
+  "offline_lip_tracking": {
+    "scope": "offline_video_driven_jaw_and_fitted_lips",
+    "live_verified": false,
+    "audio_lip_sync_verified": false,
+    "fine_lip_shapes_verified": false,
+    "frames": 180,
+    "tracked_frames": 172,
+    "mediapipe": "0.10.35",
+    "model_sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+    "input_mode": "body-landmark-guided head crop, resized to 512 square",
+    "jaw_score_range": [
+      0.000008357652404811233,
+      0.03304159268736839
+    ],
+    "jaw_radians_range": [
+      1.8263896620963283e-7,
+      0.00885750496861769
+    ],
+    "tracking_passed": true,
+    "visible_motion_excitation": false,
+    "visual_quality_verified": false,
+    "fitted_lip_controls_enabled": true,
+    "expression_max_norm": 5.999955990099639,
+    "limitations": [
+      "jawOpen to jaw X is an approximate bounded mapping",
+      "Fitted lip controls have residual error; rejected controls stay disabled",
+      "Missing faces ease mouth toward closed; no identity matching"
+    ]
+  },
+  "gpu_memory_after_child_exit_mib": [
+    0,
+    0
+  ],
+  "cpu_environment": {
+    "python": "3.10.21",
+    "mediapipe": "0.10.35",
+    "aiortc": "1.14.0",
+    "aiohttp": "3.14.5",
+    "av": "16.1.0",
+    "numpy": "1.26.4",
+    "pillow": "12.3.0"
+  },
+  "baseline_preserved": true,
+  "paid_gpu_started": false,
+  "local_validation": {
+    "python_cases_passed": 56,
+    "node_checks": [
+      "ICE gathering",
+      "OBS output DOM contract"
+    ],
+    "windows_device_test": false
+  }
+}

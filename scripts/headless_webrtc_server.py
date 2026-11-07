@@ -383,6 +383,10 @@ def main():
     parser.add_argument('--ice-config', help='JSON file containing an iceServers list.')
     parser.add_argument('--allowed-origin', action='append', default=[])
     parser.add_argument('--relay-only', action='store_true')
+    parser.add_argument('--session-seconds',type=int,default=600,
+                        help='Visible session duration, 60..21600 seconds (default 600).')
+    parser.add_argument('--idle-seconds',type=int,default=30,
+                        help='Release abandoned media after 10..300 idle seconds.')
     parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
     parser.add_argument('--mode', choices=['face','portrait','avatar'], default='face')
     parser.add_argument('--avatar-config', type=Path, help='Private prepared LHM++/tracker configuration JSON.')
@@ -391,6 +395,8 @@ def main():
     parser.add_argument('--portrait-engine',choices=['lia','liveportrait'],default='lia')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
     args = parser.parse_args()
+    if not 60<=args.session_seconds<=21600 or not 10<=args.idle_seconds<=300:
+        parser.error('Session duration must be 60..21600 and idle timeout 10..300 seconds.')
     logging.basicConfig(level=logging.INFO)
     token = os.environ.get('DFL_SIGNALING_TOKEN') or load_token(args.token_file)
     if len(token) < 32:
@@ -442,7 +448,8 @@ def main():
         worker = HeadlessCloudWorker(args.source_image, args.evidence_dir, require_cuda=True)
         image = cv2.imread(args.source_image)
         worker.process_frame(image)  # Warm the complete CUDA path before accepting video.
-    app = create_app(worker, token, ice_servers, args.allowed_origin, args.relay_only)
+    app = create_app(worker, token, ice_servers, args.allowed_origin, args.relay_only,
+                     session_seconds=args.session_seconds,idle_seconds=args.idle_seconds)
     LOG.info('Token source: %s (value not printed). Diagnostic CPU mode: %s',
              'DFL_SIGNALING_TOKEN environment variable' if os.environ.get('DFL_SIGNALING_TOKEN') else args.token_file,
              args.diagnostic_cpu)

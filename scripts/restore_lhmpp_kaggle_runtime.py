@@ -27,7 +27,16 @@ def ensure_prior_link(prior_link, target):
                 and prior_link.stat().st_size == 0):
             backup = prior_link.with_name(prior_link.name + '.kaggle-empty-backup')
             if os.path.lexists(backup):
-                raise RuntimeError('Prior placeholder backup already exists; left intact')
+                # Kaggle can serialize this symlink as an empty file again on
+                # later restarts. Preserve every older backup, then reserve a
+                # new name instead of repeatedly blocking the known repair.
+                for suffix in range(1,1001):
+                    candidate = prior_link.with_name(prior_link.name + f'.kaggle-empty-backup-{suffix}')
+                    if not os.path.lexists(candidate):
+                        backup = candidate
+                        break
+                else:
+                    raise RuntimeError('Too many prior placeholder backups; left intact')
             prior_link.rename(backup)
             print('PRESERVED_KAGGLE_EMPTY_PRIOR_ENTRY', backup, flush=True)
         else:
@@ -155,3 +164,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -1,0 +1,9 @@
+# CPU tracker/signaling environment only. Keep separate from the LHM++ GPU env.
+# Direct dependency versions used in the actual Kaggle loopback/soak tests.
+mediapipe==0.10.35
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+aiortc==1.14.0
+av==16.1.0
+aiohttp==3.14.5
+pillow==12.3.0

@@ -1,7 +1,16 @@
-# Cloud headless status — 6 November 2026
+# Cloud headless status — 7 November 2026
 
 Active branch: `experiment/cloud-headless-webrtc`.
 The existing desktop application and `master` were not modified.
+
+
+## Full-body avatar update — 7 November 2026
+
+The preferred LHM++ offline baseline is preserved; ExAvatar was not adopted. Fitted lip controls and offline audio alignment are implemented as experiments. Two 90-second GPU-backed loopback WebRTC sessions returned 267 and 261 nonblank frames, with a successful stop/restart and no processing errors (about 3 FPS). A separate frame recorded 945 CUDA compute events. The process exited cleanly and both T4s showed 0 MiB afterward.
+
+An isolated CPU tracker/GPU renderer adapter, reconnect control, optional hand observation guard and separate processed-output window for OBS have been added. The server retains its default face mode; full-body mode requires --mode avatar. The Python 3.10 timeout incompatibility was fixed. Repeated Kaggle empty-placeholder restoration now preserves additional backups. Final validation: 56 Python cases plus ICE and OBS DOM checks passed.
+
+Natural speech lip sync, sharp fingers, external laptop/hotspot reliability and Windows OBS Virtual Camera remain unverified. The live avatar preview is video-only. No paid GPU service was started. See [the stage runbook](full-body-streaming-stages.md) and [executed evidence](evidence/lhmpp-four-stage-evidence.json). Earlier face-swap/TURN results below remain separate from these new avatar checks.
 
 ## Verified on Kaggle
 

@@ -113,7 +113,11 @@ async function poll(myEpoch) {
     const recovered = pollingFailureSince !== null;
     pollingFailureSince = null;
     $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped`;
-    $('faceResult').textContent = `${status.faceStatus || 'waiting'} · ${status.swappedFrames || 0} swapped · ${status.avatarFrames || 0} animated · ${status.noFaceFrames || 0} no face`;
+    if (renderingMode === 'avatar') {
+      const label = status.faceStatus === 'avatar_no_body' ? 'Keep your whole body in view' :
+        status.faceStatus === 'avatar' ? 'Avatar tracking' : 'Waiting for body tracking';
+      $('faceResult').textContent = `${label} · ${status.avatarFrames || 0} avatar frames`;
+    } else $('faceResult').textContent = `${status.faceStatus || 'waiting'} · ${status.swappedFrames || 0} swapped · ${status.avatarFrames || 0} animated · ${status.noFaceFrames || 0} no face`;
     if (status.error) throw new Error('Cloud video processing failed. Stop and check the cloud log.');
     if (peer.connectionState === 'connected') {
       const remaining = Math.max(0, Math.floor(status.expiresIn ?? 0));
