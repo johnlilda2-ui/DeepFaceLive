@@ -90,7 +90,7 @@ def main():
         finally:
             capture.release()
     observed = [r['jaw_open_score'] for r in diagnostics if r['detected']]
-    report = dict(scope='offline_video_driven_jaw_opening', live_verified=False,
+    report = dict(scope=('offline_video_driven_jaw_opening' if lips is None else 'offline_video_driven_jaw_and_fitted_lips'), live_verified=False,
                   audio_lip_sync_verified=False, fine_lip_shapes_verified=False,
                   frames=len(refined), tracked_frames=len(observed), mediapipe=mp.__version__,
                   model_sha256=args.model_sha256,
@@ -103,7 +103,8 @@ def main():
                   fitted_lip_controls_enabled=lips is not None,
                   expression_max_norm=float(max(np.linalg.norm(r['pose']['expr']) for r in refined)),
                   limitations=['jawOpen to jaw X is an approximate bounded mapping',
-                               'No ARKit-to-FLAME expression basis conversion',
+                               ('No ARKit-to-FLAME expression basis conversion' if lips is None else
+                                'Fitted lip controls have residual error; rejected controls stay disabled'),
                                'Missing faces ease mouth toward closed; no identity matching'])
     (output/'motion.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in refined))
     (output/'mouth-diagnostics.json').write_text(json.dumps(diagnostics, indent=2)+'\n')

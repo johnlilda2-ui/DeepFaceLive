@@ -92,8 +92,16 @@ async def run(args):
                     nonlocal consumer
                     async def consume():
                         try:
-                            decoded=[await track.recv() for _ in range(3)]
-                            if not received.done():received.set_result(decoded)
+                            started=time.monotonic();pts=[];shapes=set();nonblank=0
+                            while len(pts)<3 or time.monotonic()-started<args.minimum_session_seconds:
+                                frame=await track.recv()
+                                pts.append(float(frame.pts*frame.time_base))
+                                pixels=frame.to_ndarray(format='bgr24')
+                                shapes.add(tuple(pixels.shape))
+                                nonblank+=bool(np.any(pixels>30))
+                                if len(pts)>1800:raise RuntimeError('Soak frame bound exceeded')
+                            if not received.done():received.set_result(dict(pts=pts,shapes=shapes,
+                                nonblank=nonblank,wall_seconds=time.monotonic()-started))
                         except BaseException as error:
                             if not received.done():received.set_exception(error)
                     consumer=asyncio.create_task(consume())
@@ -107,15 +115,18 @@ async def run(args):
                     if response.status!=200:raise RuntimeError('Authenticated avatar offer failed: '+str(response.status))
                     answer=await response.json()
                     await pc.setRemoteDescription(RTCSessionDescription(sdp=answer['sdp'],type=answer['type']))
-                    decoded=await asyncio.wait_for(received,40)
-                    pts=[float(f.pts*f.time_base) for f in decoded]
+                    decoded=await asyncio.wait_for(received,args.minimum_session_seconds+40)
+                    pts=decoded['pts']
                     if not all(b>a for a,b in zip(pts,pts[1:])):raise RuntimeError('Nonmonotonic returned video')
-                    shapes=[list(f.to_ndarray(format='bgr24').shape) for f in decoded]
+                    shapes=[list(s) for s in decoded['shapes']]
                     if any(s!=list(renderer.shape) for s in shapes):raise RuntimeError('Returned avatar dimensions changed')
+                    if decoded['nonblank']<.8*len(pts):raise RuntimeError('Avatar return coverage below 80 percent')
                     status=await (await http.get(server.make_url('/session/'+sid),headers=headers)).json()
                     if not status['avatarFrames']:raise RuntimeError('No animated avatar frames in return')
-                    report['sessions'].append(dict(attempt=attempt+1,received_frames=len(decoded),
-                        return_timestamps_seconds=pts,shapes=shapes,server_status=status,
+                    report['sessions'].append(dict(attempt=attempt+1,received_frames=len(pts),
+                        first_return_timestamps_seconds=pts[:3],last_return_timestamp_seconds=pts[-1],
+                        nonblank_frames=decoded['nonblank'],wall_seconds=decoded['wall_seconds'],
+                        shapes=shapes,server_status=status,
                         queue_bound=1,gpu_next_frame_id=worker.frame_id))
                 finally:
                     await http.delete(server.make_url('/session/'+sid),headers=headers)
@@ -154,4 +165,8 @@ if __name__=='__main__':
     for name in ('config','driver-video','output-dir','hand-diagnostics'):
         p.add_argument('--'+name,required=name!='hand-diagnostics',type=Path)
     p.add_argument('--gpu-python',required=True)
-    asyncio.run(run(p.parse_args()))
+    p.add_argument('--minimum-session-seconds',type=float,default=0.)
+    args=p.parse_args()
+    if not np.isfinite(args.minimum_session_seconds) or not 0<=args.minimum_session_seconds<=90:
+        p.error('Minimum session duration must be within 0..90 seconds')
+    asyncio.run(run(args))
