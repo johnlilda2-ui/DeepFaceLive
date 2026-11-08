@@ -161,3 +161,29 @@ lip synthesis or measured audio/video synchronization. Audio capture remains off
 ## Portrait avatar preview
 
 Use the portrait-mode preview to retain the reference photo's hair and visible upper-body appearance. Enter the existing connection key, choose a clear front-facing photo of yourself or a consenting person, confirm permission, and upload it before starting the camera. Face forward with a neutral expression at Start; then speak or move your head gently. The model follows webcam motion, not microphone audio. Native LIA output is 256×256 and the shoulders mostly stay still; full-body replacement is not implemented. Uploaded portrait pixels stay in server memory until replaced or the server stops. Use Stop before replacing the portrait or recalibrating. Temporary Kaggle previews expire; the interface shows the session countdown.
+
+## Head and hair replacement
+
+Use the Windows laptop webcam and a clear, front-facing reference photo with the
+whole head and hair visible. Frame the head and shoulders and start facing
+forward. This mode returns the webcam frame with the rendered head and hair
+composited into it. A lost face returns the original frame and reports no face.
+The reference's shoulders and background are excluded from the composite.
+The renderer follows webcam motion. Lighting, profile views, occlusion and
+matching the neck seam still need live verification.
+
+Use the existing prepared LivePortrait GPU runtime. In its Python environment,
+install MediaPipe with the Image Segmenter task and download the pinned
+[SelfieMulticlass float32 v1 model](https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite).
+Run the existing private WebRTC server with:
+
+```bash
+python scripts/headless_webrtc_server.py --mode portrait --portrait-engine head \
+  --portrait-runtime /private/liveportrait-runtime \
+  --head-segmentation-model /private/selfie_multiclass_256x256.tflite \
+  --source-image doc/celebs/Rob_Doe/Rob_Doe.png
+```
+
+Keep the documented private connection setup. Select **Replace head and hair**
+in the browser. **Use this face photo** changes the head reference. Use a photo
+of yourself or a consenting person.

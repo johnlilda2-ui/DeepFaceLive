@@ -31,6 +31,25 @@ class PortraitTests(unittest.TestCase):
         self.assertGreater(output[30,30].min(),200)
         self.assertEqual(output.shape,source.shape)
 
+    def test_head_blend_preserves_camera_outside_both_head_masks(self):
+        from head_replacement import composite_head
+
+        class Segmenter:
+            def mask(self, image):
+                return (image[..., 0] == 220).astype(np.float32)
+
+        frame = np.full((256, 256, 3), 40, np.uint8)
+        frame[20:80, 20:80] = 220
+        generated = np.zeros((128, 128, 3), np.uint8)
+        generated[30:75, 30:75] = [220, 90, 100]
+        output = composite_head(frame, frame[:128, :128], generated, IdentityTransform(), Segmenter())
+        np.testing.assert_array_equal(output[40, 40], [220, 90, 100])
+        np.testing.assert_allclose(output[22, 22], [40, 40, 40], atol=2)
+        np.testing.assert_array_equal(output[80:, :], frame[80:, :])
+        np.testing.assert_array_equal(output[:, 80:], frame[:, 80:])
+        self.assertIsNone(composite_head(frame, frame[:128, :128], np.zeros_like(generated),
+                                         IdentityTransform(), Segmenter()))
+
     def test_missing_driver_face_holds_portrait_instead_of_exposing_driver(self):
         worker = portrait.HeadlessPortraitWorker.__new__(portrait.HeadlessPortraitWorker)
         worker.closed = False

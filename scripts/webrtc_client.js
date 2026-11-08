@@ -188,8 +188,11 @@ async function start(mode) {
     }
     if (renderingMode === 'portrait') {
       $('preserveMouth').checked = false; $('preserveMouth').disabled = true;
-      $('swapLabel').textContent = 'Animate portrait (turn off before starting to compare the original cloud return)';
-      $('modeNotice').textContent = 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.' + (config.portraitEngine === 'lia' ? ' Native output: 256×256.' : '');
+      const head = config.portraitEngine === 'head';
+      $('swapLabel').textContent = head ? 'Replace head and hair' : 'Animate portrait (turn off before starting to compare the original cloud return)';
+      $('modeNotice').textContent = head
+        ? 'Head replacement uses the laptop webcam and preserves the original clothes and room. Begin facing forward with a neutral expression.'
+        : 'Portrait avatar: the photo supplies hair, head, shoulders and background. Begin facing forward with a neutral expression. Shoulders stay mostly still; full-body motion is not generated.' + (config.portraitEngine === 'lia' ? ' Native output: 256×256.' : '');
     }
     if (renderingMode === 'face') {
       $('preserveMouth').disabled = true; // Options stay locked while connecting.

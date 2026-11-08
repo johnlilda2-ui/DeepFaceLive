@@ -38,11 +38,13 @@ def paste_portrait(source, generated, transform):
 class HeadlessPortraitWorker:
     mode = 'portrait'
 
-    def __init__(self, source_image, evidence_dir, runtime_dir):
+    def __init__(self, source_image, evidence_dir, runtime_dir, head_segmenter=None):
         import subprocess
         import torch
         import cv2
         self.closed = False
+        self.head_segmenter = head_segmenter
+        self.engine = 'head' if head_segmenter is not None else 'liveportrait'
         self.frame_count = 0
         self.threshold = .5
         self.runtime_dir = Path(runtime_dir).resolve()
@@ -136,11 +138,16 @@ class HeadlessPortraitWorker:
         if preserve_mouth:
             raise ValueError('Portrait mode animates portrait lips; real-mouth overlay is face-swap only.')
         validate_frame(frame)
+        segmenter = getattr(self, 'head_segmenter', None)
         try:
-            crop = smoke.detect_and_align_face(frame,'driver',self.detector,self.marker,
-                                              2.3,256,self.threshold)
+            aligned = smoke.detect_and_align_face(frame,'driver',self.detector,self.marker,
+                                                 2.3,256,self.threshold,
+                                                 return_transform=segmenter is not None)
         except smoke.NoFaceDetected:
+            if segmenter is not None:
+                return frame.copy(), 'no_face'
             return self.last_output.copy(), 'avatar_no_face'
+        crop, driver_transform = aligned if segmenter is not None else (aligned, None)
         with self.torch.inference_mode():
             driving = self.wrapper.get_kp_info(self.wrapper.prepare_source(crop[..., ::-1]))
             rotation = self.rotation(driving['pitch'],driving['yaw'],driving['roll'])
@@ -157,6 +164,12 @@ class HeadlessPortraitWorker:
             keypoints = self.wrapper.stitching(self.source_keypoints,keypoints)
             decoded = self.wrapper.warp_decode(self.source_feature,self.source_keypoints,keypoints)
             generated = self.wrapper.parse_output(decoded['out'])[0][..., ::-1].copy()
+        if segmenter is not None:
+            from head_replacement import composite_head
+
+            output = composite_head(frame, crop, generated, driver_transform, segmenter)
+            self.frame_count += 1
+            return (output, 'swapped') if output is not None else (frame.copy(), 'no_face')
         output = paste_portrait(self.source,generated,self.transform)
         self.last_output = output
         self.frame_count += 1
@@ -181,5 +194,7 @@ class HeadlessPortraitWorker:
         (self.profile_dir/'portrait-evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
         for hook in self.hooks:
             hook.remove()
+        if self.head_segmenter is not None:
+            self.head_segmenter.close()
         if not evidence['cuda_verified']:
             raise RuntimeError('Portrait GPU execution evidence was incomplete.')

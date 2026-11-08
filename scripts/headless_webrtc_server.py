@@ -394,7 +394,8 @@ def main():
     parser.add_argument('--avatar-config', type=Path, help='Private prepared avatar and tracker configuration JSON.')
     parser.add_argument('--gpu-python', help='Prepared isolated GPU Python executable.')
     parser.add_argument('--portrait-runtime', help='Pinned runtime directory for the optional LivePortrait engine.')
-    parser.add_argument('--portrait-engine',choices=['lia','liveportrait'],default='lia')
+    parser.add_argument('--portrait-engine',choices=['lia','liveportrait','head'],default='lia')
+    parser.add_argument('--head-segmentation-model', type=Path, help='Official SelfieMulticlass float32 v1 model for head replacement.')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
     args = parser.parse_args()
     if not 60<=args.session_seconds<=21600 or not 10<=args.idle_seconds<=300:
@@ -450,15 +451,32 @@ def main():
     elif args.mode == 'portrait':
         if not args.source_image:
             parser.error('Portrait mode needs --source-image.')
-        if args.portrait_engine == 'liveportrait':
+        if args.portrait_engine in ('liveportrait', 'head'):
             if not args.portrait_runtime:
                 parser.error('LivePortrait needs --portrait-runtime.')
             from headless_portrait_worker import HeadlessPortraitWorker as PortraitWorker
         else:
             from headless_lia_portrait_worker import HeadlessLiaPortraitWorker as PortraitWorker
         import cv2
-        worker = PortraitWorker(args.source_image,args.evidence_dir,args.portrait_runtime)
-        worker.process_frame(cv2.imread(args.source_image))
+        if args.portrait_engine == 'head':
+            if not args.head_segmentation_model:
+                parser.error('Head replacement needs --head-segmentation-model.')
+            from head_replacement import HeadSegmenter
+
+            segmenter = HeadSegmenter(args.head_segmentation_model)
+            try:
+                worker = PortraitWorker(args.source_image, args.evidence_dir,
+                                        args.portrait_runtime, head_segmenter=segmenter)
+            except BaseException:
+                segmenter.close()
+                raise
+        else:
+            worker = PortraitWorker(args.source_image,args.evidence_dir,args.portrait_runtime)
+        try:
+            worker.process_frame(cv2.imread(args.source_image))
+        except BaseException:
+            worker.close()
+            raise
     elif args.diagnostic_cpu:
         class DiagnosticWorker:
             def set_identity(self, image):
