@@ -219,7 +219,7 @@ class NoFaceDetected(RuntimeError):
     """A valid frame has no detectable face; inference errors use other exceptions."""
 
 
-def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int, threshold: float, return_transform: bool = False, return_mouth: bool = False):
+def detect_and_align_face(image, role: str, detector, marker, coverage: float, output_size: int, threshold: float, return_transform: bool = False, return_mouth: bool = False, *, y_offset: float = -0.15):
     import numpy as np
     from xlib.face import ELandmarks2D, FLandmarks2D, FRect
 
@@ -251,7 +251,7 @@ def detect_and_align_face(image, role: str, detector, marker, coverage: float, o
         crop_matrix, invert=True
     )
     aligned_face, transform = global_landmarks.cut(
-        image, coverage=coverage, output_size=output_size, y_offset=-0.15
+        image, coverage=coverage, output_size=output_size, y_offset=y_offset
     )
     if aligned_face is None or aligned_face.size == 0:
         raise RuntimeError(f"Alignment returned an empty face crop for the {role} image.")

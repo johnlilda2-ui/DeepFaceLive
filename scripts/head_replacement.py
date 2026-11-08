@@ -50,19 +50,36 @@ def composite_head(frame, driver_crop, generated, transform, segmenter):
 
     inverse = transform.invert()
     generated_matrix = inverse.to_exact_mat(size, size, width, height)
-    alpha = cv2.warpAffine(source_mask, generated_matrix, (width, height))
+    _, top, _, head_height = cv2.boundingRect((source_mask > .5).astype(np.uint8))
+    # Feather the lower seam without softening hair detail.
+    lower = np.clip((np.arange(size) - top - .68 * head_height) / (.2 * head_height), 0, 1)
+    lower = lower.astype(np.float32)[:, None, None]
+    premultiplied = np.dstack((generated.astype(np.float32) * source_mask[..., None], source_mask))
+    softened = cv2.GaussianBlur(premultiplied, (0, 0), max(1, size / 115))
+    boundary = np.clip((1 - softened[..., 3:4]) * 5, 0, 1)
+    premultiplied += lower * boundary * (softened - premultiplied)
+    warped = cv2.warpAffine(premultiplied, generated_matrix, (width, height))
+    replacement, alpha = warped[..., :3], warped[..., 3]
     if not np.any(alpha > .5):
         return None
-    replacement = cv2.warpAffine(generated.astype(np.float32) * source_mask[..., None],
-                                 generated_matrix, (width, height))
     old_h, old_w = driver_mask.shape
     driver_matrix = inverse.to_exact_mat(old_w, old_h, width, height)
-    old_head = cv2.warpAffine(driver_mask, driver_matrix, (width, height))
-    exposed = (old_head > .35) & (alpha < .98)
+    # The head mask can underestimate the ears. Grow it laterally above
+    # the jaw so cleanup can cover their edges while protecting the neck.
+    _, old_top, _, old_height = cv2.boundingRect((driver_mask > .5).astype(np.uint8))
+    upper = old_top + round(.76 * old_height)
+    radius = max(1, old_w // 32)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 3))
+    cleanup = driver_mask.copy()
+    cleanup[:upper] = cv2.dilate(driver_mask, kernel)[:upper]
+    old_head = cv2.warpAffine(cleanup, driver_matrix, (width, height))
+    old_mask = (old_head > .35).astype(np.uint8)
     clean = frame
-    if exposed.any():
+    if np.any(old_mask & (alpha < .98)):
+        # Mask the covered part as well, so inpainting cannot pull old skin
+        # or hair from under the replacement into its exposed border.
         clean = frame.copy()
-        x, y, w, h = cv2.boundingRect(exposed.astype(np.uint8))
+        x, y, w, h = cv2.boundingRect(old_mask)
         area = np.s_[max(0, y - 8):y + h + 8, max(0, x - 8):x + w + 8]
-        clean[area] = cv2.inpaint(frame[area], exposed[area].astype(np.uint8), 3, cv2.INPAINT_TELEA)
+        clean[area] = cv2.inpaint(frame[area], old_mask[area], 3, cv2.INPAINT_TELEA)
     return np.clip(np.rint(clean * (1 - alpha[..., None]) + replacement), 0, 255).astype(np.uint8)

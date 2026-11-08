@@ -31,7 +31,7 @@ class PortraitTests(unittest.TestCase):
         self.assertGreater(output[30,30].min(),200)
         self.assertEqual(output.shape,source.shape)
 
-    def test_head_blend_preserves_camera_outside_both_head_masks(self):
+    def test_head_blend_cleans_ear_edges_and_preserves_camera_outside_cleanup(self):
         from head_replacement import composite_head
 
         class Segmenter:
@@ -40,13 +40,15 @@ class PortraitTests(unittest.TestCase):
 
         frame = np.full((256, 256, 3), 40, np.uint8)
         frame[20:80, 20:80] = 220
+        frame[30:43, 80:82] = 180
         generated = np.zeros((128, 128, 3), np.uint8)
         generated[30:75, 30:75] = [220, 90, 100]
         output = composite_head(frame, frame[:128, :128], generated, IdentityTransform(), Segmenter())
         np.testing.assert_array_equal(output[40, 40], [220, 90, 100])
         np.testing.assert_allclose(output[22, 22], [40, 40, 40], atol=2)
         np.testing.assert_array_equal(output[80:, :], frame[80:, :])
-        np.testing.assert_array_equal(output[:, 80:], frame[:, 80:])
+        self.assertLess(int(output[36, 81, 0]), 100)
+        np.testing.assert_array_equal(output[:, 84:], frame[:, 84:])
         self.assertIsNone(composite_head(frame, frame[:128, :128], np.zeros_like(generated),
                                          IdentityTransform(), Segmenter()))
 

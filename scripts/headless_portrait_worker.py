@@ -14,6 +14,8 @@ import headless_inference_smoke_test as smoke
 from headless_cloud_worker import validate_frame
 
 UPSTREAM_REVISION = '9b294b3d0536135442ea73cb01e6cb3ca7029dd3'
+HEAD_COVERAGE = 3.0
+HEAD_Y_OFFSET = -.24
 
 
 def paste_portrait(source, generated, transform):
@@ -113,8 +115,12 @@ class HeadlessPortraitWorker:
         validate_frame(image)
         if len(self.detector.extract(image,threshold=self.threshold)[0]) != 1:
             raise ValueError('Choose a portrait with exactly one visible face.')
-        crop, transform = smoke.detect_and_align_face(image,'portrait',self.detector,self.marker,
-                                                     2.3,512,self.threshold,return_transform=True)
+        head_mode = self.head_segmenter is not None
+        crop, transform = smoke.detect_and_align_face(
+            image, 'portrait', self.detector, self.marker,
+            HEAD_COVERAGE if head_mode else 2.3, 512, self.threshold,
+            return_transform=True, y_offset=HEAD_Y_OFFSET if head_mode else -.15,
+        )
         with self.torch.inference_mode():
             prepared = self.wrapper.prepare_source(crop[..., ::-1])
             info = self.wrapper.get_kp_info(prepared)
@@ -140,9 +146,12 @@ class HeadlessPortraitWorker:
         validate_frame(frame)
         segmenter = getattr(self, 'head_segmenter', None)
         try:
-            aligned = smoke.detect_and_align_face(frame,'driver',self.detector,self.marker,
-                                                 2.3,256,self.threshold,
-                                                 return_transform=segmenter is not None)
+            aligned = smoke.detect_and_align_face(
+                frame, 'driver', self.detector, self.marker,
+                HEAD_COVERAGE if segmenter is not None else 2.3, 256, self.threshold,
+                return_transform=segmenter is not None,
+                y_offset=HEAD_Y_OFFSET if segmenter is not None else -.15,
+            )
         except smoke.NoFaceDetected:
             if segmenter is not None:
                 return frame.copy(), 'no_face'
