@@ -78,39 +78,60 @@ def composite_head(frame, driver_crop, generated, transform, segmenter):
     neck_area = (y > sy + .65 * sh) & (abs(x - face_center[0]) < .58 * sw)
     neck = opacity(body_skin) * neck_fade * neck_area
     alpha = np.maximum(opacity(hair + face), neck).astype(np.float32)
-    premultiplied = np.dstack((generated.astype(np.float32) * alpha[..., None], alpha))
+    premultiplied = np.dstack((generated.astype(np.float32) * alpha[..., None],
+                               alpha, neck.astype(np.float32)))
     warped = cv2.warpAffine(premultiplied, matrix, (width, height))
     replacement, alpha = warped[..., :3], warped[..., 3]
     if not np.any(alpha > .5):
         return None
 
+    rendered_neck = warped[..., 4]
+
     # Segment the whole camera frame to cover hair below the aligned crop.
     old_hair, old_skin, old_face, accessories = segmenter.regions(frame)
     old_head = (old_hair + old_face > .30).astype(np.uint8)
     count, labels = cv2.connectedComponents(old_head)
-    face_in_frame = cv2.warpAffine(
-        driver_face, transform.invert().to_exact_mat(crop_size, crop_size, width, height),
-        (width, height))
+    driver_matrix = transform.invert().to_exact_mat(crop_size, crop_size, width, height)
+    face_in_frame = cv2.warpAffine(driver_face, driver_matrix, (width, height))
     overlap = np.bincount(labels[face_in_frame > .65], minlength=count)
     overlap[0] = 0
     if not np.any(overlap):
         return None
     old_head = (labels == overlap.argmax()).astype(np.uint8)
     _, _, old_width, _ = cv2.boundingRect(old_head)
-    radius = max(1, round(old_width * .025))
+    radius = max(1, round(old_width * .045))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
     near_head = cv2.dilate(old_head, kernel, iterations=2)
     old_head |= ((accessories > .4) & (near_head != 0)).astype(np.uint8)
     old_mask = cv2.dilate(old_head, kernel)
     old_mask[(old_skin > .65) & (old_head == 0)] = 0
-    clean = frame
+    rows, columns = np.ogrid[:crop_size, :crop_size]
+    fade = np.clip((dy + 1.35 * dh - rows) / (.26 * dh), 0, 1)
+    fade *= rows > dy + .67 * dh
+    neck_zone = abs(columns - (dx + dw / 2)) < .8 * dw
+    under_jaw = cv2.warpAffine(
+        (fade * neck_zone).astype(np.float32), driver_matrix, (width, height))
+
+    clean = frame.astype(np.float32)
+    cleanup_strength = np.zeros((height, width), dtype=np.float32)
     if np.any(old_mask & (alpha < .98)):
-        clean = frame.copy()
-        x, y, w, h = cv2.boundingRect(old_mask)
+        # Exclude nearby neck pixels from the fill samples. Feather only
+        # the perimeter of the expanded mask, outside the original head.
+        fill_mask = old_mask | ((old_skin > .30) & (under_jaw > 0)).astype(np.uint8)
+        x, y, w, h = cv2.boundingRect(fill_mask)
         area = np.s_[max(0, y - 8):y + h + 8, max(0, x - 8):x + w + 8]
-        # Keep the camera neck in the output, but exclude nearby skin as
-        # an inpainting sample so its color cannot spread into the wall.
-        fill_mask = old_mask | ((old_skin > .45) & (near_head != 0)).astype(np.uint8)
-        filled = cv2.inpaint(frame[area], fill_mask[area], 3, cv2.INPAINT_TELEA)
-        clean[area][old_mask[area] != 0] = filled[old_mask[area] != 0]
+        filled = cv2.inpaint(frame[area], fill_mask[area], 3, cv2.INPAINT_NS)
+        edge = cv2.distanceTransform(old_mask[area], cv2.DIST_L2, 3)
+        cleanup_strength[area] = np.clip(edge / max(1, radius * .55), 0, 1)
+        clean[area] += cleanup_strength[area][..., None] * (filled - clean[area])
+
+    # Match the skin on either side of the seam using pixels where both
+    # necks are visible. Taper the adjustment below the jaw and into the
+    # skin mask so shoulders, clothes and background retain their color.
+    matching_skin = (old_skin > .8) & (rendered_neck > .55) & (under_jaw > .6)
+    if np.count_nonzero(matching_skin) >= 16:
+        rendered_color = replacement[matching_skin] / alpha[matching_skin, None]
+        shift = np.median(rendered_color - frame[matching_skin], axis=0)
+        strength = under_jaw * opacity(old_skin) * (1 - cleanup_strength)
+        clean += strength[..., None] * np.clip(shift, -100, 100)
     return np.clip(np.rint(clean * (1 - alpha[..., None]) + replacement), 0, 255).astype(np.uint8)
