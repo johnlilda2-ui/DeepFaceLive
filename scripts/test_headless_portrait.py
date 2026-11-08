@@ -31,22 +31,26 @@ class PortraitTests(unittest.TestCase):
         self.assertGreater(output[30,30].min(),200)
         self.assertEqual(output.shape,source.shape)
 
-    def test_head_blend_cleans_ear_edges_and_preserves_camera_outside_cleanup(self):
+    def test_head_blend_aligns_neck_and_cleans_only_the_tracked_person(self):
         from head_replacement import composite_head
 
         class Segmenter:
-            def mask(self, image):
-                return (image[..., 0] == 220).astype(np.float32)
+            def regions(self, image):
+                return tuple((image[..., 0] == value).astype(np.float32)
+                             for value in (200, 130, 220, 180))
 
         frame = np.full((256, 256, 3), 40, np.uint8)
         frame[20:80, 20:80] = 220
         frame[30:43, 80:82] = 180
+        frame[80:106, 32:68] = 130
+        frame[20:80, 170:230] = 220
         generated = np.zeros((128, 128, 3), np.uint8)
-        generated[30:75, 30:75] = [220, 90, 100]
+        generated[25:85, 30:90] = [220, 90, 100]
+        generated[85:100, 48:72] = [130, 190, 210]
         output = composite_head(frame, frame[:128, :128], generated, IdentityTransform(), Segmenter())
-        np.testing.assert_array_equal(output[40, 40], [220, 90, 100])
-        np.testing.assert_allclose(output[22, 22], [40, 40, 40], atol=2)
-        np.testing.assert_array_equal(output[80:, :], frame[80:, :])
+        np.testing.assert_array_equal(output[21, 21], [220, 90, 100])
+        self.assertGreater(int(output[82, 50, 2]), 180)
+        np.testing.assert_array_equal(output[95:, :], frame[95:, :])
         self.assertLess(int(output[36, 81, 0]), 100)
         np.testing.assert_array_equal(output[:, 84:], frame[:, 84:])
         self.assertIsNone(composite_head(frame, frame[:128, :128], np.zeros_like(generated),
