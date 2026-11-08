@@ -11,7 +11,7 @@ import numpy as np
 
 
 class AvatarPipeClient:
-    def __init__(self, gpu_python, config, log_path, startup_timeout=180., render_timeout=30.):
+    def __init__(self, gpu_python, config, log_path, startup_timeout=180., render_timeout=30., channels=3):
         if not math.isfinite(render_timeout) or not 0<render_timeout<=120:
             raise ValueError('Invalid render timeout')
         self.lock=threading.Lock();self.closed=False;self.failed=False
@@ -25,7 +25,7 @@ class AvatarPipeClient:
             ready=self._header(time.monotonic()+startup_timeout)
             self.shape=ready.get('shape')
             if (ready.get('type')!='ready' or not isinstance(self.shape,list) or len(self.shape)!=3 or
-                    any(type(n) is not int for n in self.shape) or self.shape[2]!=3 or
+                    any(type(n) is not int for n in self.shape) or self.shape[2]!=channels or
                     not 14<=min(self.shape[:2])<=max(self.shape[:2])<=840):
                 raise RuntimeError('Invalid GPU renderer startup response')
             self.gpu=ready.get('gpu')

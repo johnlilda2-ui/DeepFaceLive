@@ -112,7 +112,8 @@ async function poll(myEpoch) {
     if (myEpoch !== epoch || !peer) return;
     const recovered = pollingFailureSince !== null;
     pollingFailureSince = null;
-    $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped`;
+    $('processing').textContent = `${status.processed} frames · ${status.dropped} stale dropped` +
+      (status.processingMedianMs == null ? '' : ` · ${status.processingMedianMs} ms server processing`);
     if (renderingMode === 'avatar') {
       const label = status.faceStatus === 'avatar_no_body' ? 'Keep your whole body in view' :
         status.faceStatus === 'avatar' ? 'Avatar tracking' : 'Waiting for body tracking';
@@ -179,7 +180,10 @@ async function start(mode) {
     if (renderingMode === 'avatar') {
       $('swapEnabled').checked = true; $('preserveMouth').checked = false;
       $('preserveMouth').disabled = true;
-      $('modeNotice').textContent = 'Experimental full-body avatar: keep your whole body in view. Start facing forward with your head level. Motion may be slow on this T4. Audio is not sent in this preview.';
+      $('modeNotice').textContent = config.portraitEngine === 'splattingavatar'
+        ? 'Body replacement sample. Keep the camera fixed and your entire body in frame. The right panel shows the sample person composited into the room. This test covers body movement only.'
+        : 'Experimental full-body avatar: keep your whole body in view. Start facing forward with your head level. Motion may be slow on this T4. Audio is not sent in this preview.';
+      $('obsOutput').hidden = config.portraitEngine === 'splattingavatar';
       if (mode !== 'camera') throw new Error('Use Start camera with your whole body visible for the full-body avatar.');
     }
     if (renderingMode === 'portrait') {
@@ -203,7 +207,9 @@ async function start(mode) {
       throw new Error('Open this page using HTTPS or localhost to use video.');
     message(mode === 'camera' ? 'Waiting for your camera permission…' : 'Starting the consented demo image…');
     const input = mode === 'camera' ? await navigator.mediaDevices.getUserMedia({audio:false,
-      video:{width:{ideal:640},height:{ideal:480},frameRate:{ideal:15,max:15}}}) : await demoStream(myEpoch);
+      video:config.portraitEngine === 'splattingavatar'
+        ? {aspectRatio:{ideal:320/576},width:{ideal:360},height:{ideal:648},frameRate:{ideal:24,max:24}}
+        : {width:{ideal:640},height:{ideal:480},frameRate:{ideal:15,max:15}}}) : await demoStream(myEpoch);
     if (myEpoch !== epoch) {input.getTracks().forEach(track=>track.stop()); return;}
     stream = input; $('local').srcObject = stream;
     peer = new RTCPeerConnection({iceServers:config.iceServers,

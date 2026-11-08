@@ -45,7 +45,7 @@ class HeadlessLHMStreamWorker:
             if packet is None:
                 self.stats['tracking_missing']+=1
                 # Never leak the source face/body or silently reuse a stale avatar.
-                return np.zeros(self.renderer.shape,dtype=np.uint8),'avatar_no_body'
+                return np.zeros((*self.renderer.shape[:2], 3), dtype=np.uint8), 'avatar_no_body'
             # GPU worker IDs stay monotonic across fresh WebRTC sessions; RTP
             # clocks reset per session, so use a separate monotonic render clock.
             timestamp=self.last_render_timestamp+max(1.,relative-getattr(self,'previous_relative',relative))
@@ -55,8 +55,11 @@ class HeadlessLHMStreamWorker:
             self.previous_relative=relative
             self.last_render_timestamp=timestamp;self.frame_id+=1
             self.stats['rendered']+=1
-            return rgb[:,:,::-1].copy(),'avatar'
+            return self.output_frame(image, rgb)
         finally:self.lock.release()
+
+    def output_frame(self, image, rgb):
+        return rgb[:, :, ::-1].copy(), 'avatar'
 
     def close(self):
         with self.lock:

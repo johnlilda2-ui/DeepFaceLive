@@ -15,11 +15,15 @@ def main():
         config=json.loads(Path(sys.argv[1]).read_text())
         # Upstream model initialization logs must never corrupt the frame pipe.
         with contextlib.redirect_stdout(sys.stderr):
-            from lhmpp_avatar_backend import LHMAvatarBackend
             from headless_avatar_worker import HeadlessAvatarWorker
-            backend=LHMAvatarBackend(config['runtime_root'],config['model_dir'],config['reference'],
-                render_height=config.get('render_height',630),
-                framing_box=config.get('framing_box'),optimized_decoder=True)
+            if config.get('backend') == 'splattingavatar':
+                from splatting_avatar_backend import SplattingAvatarBackend
+                backend = SplattingAvatarBackend(config)
+            else:
+                from lhmpp_avatar_backend import LHMAvatarBackend
+                backend = LHMAvatarBackend(config['runtime_root'],config['model_dir'],config['reference'],
+                    render_height=config.get('render_height',630),
+                    framing_box=config.get('framing_box'),optimized_decoder=True)
             worker=HeadlessAvatarWorker(backend,config['initial_pose'])
         header(dict(type='ready',shape=list(backend.output_shape),gpu=backend.stats['gpu']))
         profiled=False

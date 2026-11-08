@@ -15,6 +15,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+from statistics import median
 import time
 
 from aiohttp import web
@@ -204,6 +205,7 @@ class SessionManager:
         track = session['track']
         return {'state': session['pc'].connectionState, 'iceState': session['pc'].iceConnectionState,
                 'processed': track.processed if track else 0, 'dropped': track.dropped if track else 0,
+                'processingMedianMs': round(median(track.processing_ms), 1) if track and track.processing_ms else None,
                 'error': bool(track and track.error), 'expiresIn': max(0, int(
                     self.session_seconds - (time.monotonic() - session['created']))),
                 'faceStatus': track.last_status if track else 'waiting',
@@ -389,8 +391,8 @@ def main():
                         help='Release abandoned media after 10..300 idle seconds.')
     parser.add_argument('--diagnostic-cpu', action='store_true', help='Color inversion test; no face swap or GPU claim.')
     parser.add_argument('--mode', choices=['face','portrait','avatar'], default='face')
-    parser.add_argument('--avatar-config', type=Path, help='Private prepared LHM++/tracker configuration JSON.')
-    parser.add_argument('--gpu-python', help='Prepared isolated LHM++ Python executable.')
+    parser.add_argument('--avatar-config', type=Path, help='Private prepared avatar and tracker configuration JSON.')
+    parser.add_argument('--gpu-python', help='Prepared isolated GPU Python executable.')
     parser.add_argument('--portrait-runtime', help='Pinned runtime directory for the optional LivePortrait engine.')
     parser.add_argument('--portrait-engine',choices=['lia','liveportrait'],default='lia')
     parser.add_argument('--evidence-dir', default='/kaggle/working/dfl-signaling-evidence')
@@ -407,18 +409,44 @@ def main():
     if args.mode == 'avatar':
         if not args.avatar_config or not args.gpu_python:
             parser.error('Avatar mode needs --avatar-config and --gpu-python.')
-        from avatar_stream_tracker import MediaPipeAvatarTracker
         from avatar_pipe_client import AvatarPipeClient
-        from headless_lhmpp_stream_worker import HeadlessLHMStreamWorker
+
         config = json.loads(args.avatar_config.read_text())
-        Path(args.evidence_dir).mkdir(parents=True,exist_ok=True)
-        tracker = MediaPipeAvatarTracker(config)
+        backend = config.get('backend', 'lhmpp')
+        if backend == 'splattingavatar':
+            import cv2
+            from splatting_avatar_preview import SplattingAvatarPreviewWorker, SplattingAvatarTracker
+
+            if not Path(config['smpl_model']).is_file():
+                parser.error('SplattingAvatar needs the official female SMPL model at smpl_model.')
+            room = cv2.imread(config['room_plate'])
+            if room is None:
+                parser.error('SplattingAvatar needs an empty-room image at room_plate.')
+            tracker = SplattingAvatarTracker(config)
+            channels = 4
+        elif backend == 'lhmpp':
+            from avatar_stream_tracker import MediaPipeAvatarTracker
+            from headless_lhmpp_stream_worker import HeadlessLHMStreamWorker
+
+            tracker = MediaPipeAvatarTracker(config)
+            channels = 3
+        else:
+            parser.error('Unknown avatar backend.')
         try:
-            renderer = AvatarPipeClient(args.gpu_python,args.avatar_config,
-                                        Path(args.evidence_dir)/'avatar-gpu.log')
+            Path(args.evidence_dir).mkdir(parents=True, exist_ok=True)
+            renderer = AvatarPipeClient(args.gpu_python, args.avatar_config,
+                                        Path(args.evidence_dir) / 'avatar-gpu.log', channels=channels)
+            try:
+                if backend == 'splattingavatar':
+                    worker = SplattingAvatarPreviewWorker(tracker, renderer, room)
+                else:
+                    worker = HeadlessLHMStreamWorker(tracker, renderer)
+            except BaseException:
+                renderer.close()
+                raise
         except BaseException:
-            tracker.close();raise
-        worker = HeadlessLHMStreamWorker(tracker,renderer)
+            tracker.close()
+            raise
     elif args.mode == 'portrait':
         if not args.source_image:
             parser.error('Portrait mode needs --source-image.')
