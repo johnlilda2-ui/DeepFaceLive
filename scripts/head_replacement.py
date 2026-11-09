@@ -75,11 +75,20 @@ def composite_head(frame, driver_crop, generated, transform, segmenter):
     # below the jaw and fade its lower edge into the camera's neck.
     jaw = sy + sh
     neck_fade = np.clip((jaw + .18 * sh - y) / (.18 * sh), 0, 1)
-    neck_area = (y > sy + .65 * sh) & (abs(x - face_center[0]) < .58 * sw)
-    neck = opacity(body_skin) * neck_fade * neck_area
-    alpha = np.maximum(opacity(hair + face), neck).astype(np.float32)
+    side_fade = np.clip((.58 * sw - abs(x - face_center[0])) / (.15 * sw), 0, 1)
+    upper_fade = np.clip((y - sy - .65 * sh) / (.12 * sh), 0, 1)
+    skin_alpha = opacity(body_skin)
+    # Fade before the decoder crop or the segmented neck ends. A tight
+    # source photo can end above the geometric neck cutoff.
+    skin_support = np.pad((skin_alpha > .1).astype(np.uint8), 1)
+    distance = cv2.distanceTransform(skin_support, cv2.DIST_L2, 3)[1:-1, 1:-1]
+    skin_edge = np.clip(distance / (.13 * sh), 0, 1)
+    neck = skin_alpha * skin_edge * neck_fade * side_fade * upper_fade
+    head_alpha = opacity(hair + face)
+    alpha = np.maximum(head_alpha, neck).astype(np.float32)
+    neck_contribution = np.maximum(alpha - head_alpha, 0)
     premultiplied = np.dstack((generated.astype(np.float32) * alpha[..., None],
-                               alpha, neck.astype(np.float32)))
+                               alpha, neck_contribution, neck_contribution * (1 - .65 * neck_fade))).astype(np.float32)
     warped = cv2.warpAffine(premultiplied, matrix, (width, height))
     replacement, alpha = warped[..., :3], warped[..., 3]
     if not np.any(alpha > .5):
@@ -113,7 +122,6 @@ def composite_head(frame, driver_crop, generated, transform, segmenter):
         (fade * neck_zone).astype(np.float32), driver_matrix, (width, height))
 
     clean = frame.astype(np.float32)
-    cleanup_strength = np.zeros((height, width), dtype=np.float32)
     if np.any(old_mask & (alpha < .98)):
         # Exclude nearby neck pixels from the fill samples. Feather only
         # the perimeter of the expanded mask, outside the original head.
@@ -122,16 +130,14 @@ def composite_head(frame, driver_crop, generated, transform, segmenter):
         area = np.s_[max(0, y - 8):y + h + 8, max(0, x - 8):x + w + 8]
         filled = cv2.inpaint(frame[area], fill_mask[area], 3, cv2.INPAINT_NS)
         edge = cv2.distanceTransform(old_mask[area], cv2.DIST_L2, 3)
-        cleanup_strength[area] = np.clip(edge / max(1, radius * .55), 0, 1)
-        clean[area] += cleanup_strength[area][..., None] * (filled - clean[area])
+        cleanup_strength = np.clip(edge / max(1, radius * .55), 0, 1)
+        clean[area] += cleanup_strength[..., None] * (filled - clean[area])
 
-    # Match the skin on either side of the seam using pixels where both
-    # necks are visible. Taper the adjustment below the jaw and into the
-    # skin mask so shoulders, clothes and background retain their color.
-    matching_skin = (old_skin > .8) & (rendered_neck > .55) & (under_jaw > .6)
+    # Match the lower replacement neck to nearby camera skin. Adjust only
+    # generated pixels so the camera chest can never acquire a color patch.
+    matching_skin = (old_skin > .75) & (rendered_neck > .35) & (under_jaw > .6)
     if np.count_nonzero(matching_skin) >= 16:
         rendered_color = replacement[matching_skin] / alpha[matching_skin, None]
-        shift = np.median(rendered_color - frame[matching_skin], axis=0)
-        strength = under_jaw * opacity(old_skin) * (1 - cleanup_strength)
-        clean += strength[..., None] * np.clip(shift, -100, 100)
+        shift = np.median(frame[matching_skin] - rendered_color, axis=0)
+        replacement += warped[..., 5:6] * np.clip(shift, -100, 100)
     return np.clip(np.rint(clean * (1 - alpha[..., None]) + replacement), 0, 255).astype(np.uint8)

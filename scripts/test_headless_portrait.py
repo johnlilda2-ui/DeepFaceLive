@@ -49,10 +49,10 @@ class PortraitTests(unittest.TestCase):
         generated[85:100, 48:72] = [130, 190, 210]
         output = composite_head(frame, frame[:128, :128], generated, IdentityTransform(), Segmenter())
         np.testing.assert_array_equal(output[21, 21], [220, 90, 100])
-        self.assertGreater(int(output[82, 50, 2]), 180)
-        self.assertGreater(int(output[92, 35, 2]), int(output[98, 35, 2]))
-        self.assertGreater(int(output[98, 35, 2]), int(frame[98, 35, 2]))
-        np.testing.assert_array_equal(output[101:, :], frame[101:, :])
+        self.assertGreater(int(output[82, 50, 2]), int(frame[82, 50, 2]))
+        self.assertLess(int(output[82, 50, 2]), 190)
+        np.testing.assert_array_equal(output[92:, :], frame[92:, :])
+        np.testing.assert_array_equal(output[88, 35], frame[88, 35])
         self.assertLess(int(output[36, 81, 0]), 100)
         np.testing.assert_array_equal(output[:, 84:], frame[:, 84:])
         self.assertIsNone(composite_head(frame, frame[:128, :128], np.zeros_like(generated),
